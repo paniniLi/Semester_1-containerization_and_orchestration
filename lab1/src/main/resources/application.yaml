@@ -1,0 +1,10 @@
+server:
+  address: ${hostName:localhost}
+  port: ${portNumber:8080}
+
+project:
+  version: @project.version@
+
+spring:
+  main:
+    allow-circular-references: true
