@@ -1,2 +1,12 @@
- #  Лабораторная 1: Контейнеризация и оркестрация 
-Ссылка на задание - https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-1-docker/lab.md.
+# Контейнеризация и оркестрация приложений
+
+Репозиторий с лабораторными работами по дисциплине
+«Контейнеризация и оркестрация приложений»
+
+## Лабораторные работы
+
+- [Лабораторная работа №1 — Свой Docker](lab1/README.md)
+
+## Материалы курса
+
+- [Задание к лабораторной работе №1](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-1-docker/lab.md)
