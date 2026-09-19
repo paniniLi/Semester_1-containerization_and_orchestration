@@ -9,8 +9,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 @RestController
@@ -52,16 +50,6 @@ public class SystemController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body("Error: " + e.getMessage());
-        }
-    }
-
-    @GetMapping("/socket/open")
-    public ResponseEntity<String> seccompTest() {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress("127.0.0.1", 8080), 2000);
-            return ResponseEntity.ok("Success");
-        } catch (IOException e) {
-            return ResponseEntity.status(403).body("Operation not permitted: " + e.getMessage());
         }
     }
 
