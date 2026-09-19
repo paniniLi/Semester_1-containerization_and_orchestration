@@ -63,16 +63,6 @@ public class SystemController {
         }
     }
 
-    @GetMapping("/socket/open")
-    public ResponseEntity<String> seccompTest() {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress("127.0.0.1", 8080), 2000);
-            return ResponseEntity.ok("Success");
-        } catch (IOException e) {
-            return ResponseEntity.status(403).body("Operation not permitted: " + e.getMessage());
-        }
-    }
-
     @PostMapping("/system/execute")
     public ResponseEntity<String> executeCommand(@RequestBody CommandRequest request) {
         if (request == null || request.command() == null || request.command().isBlank()) {

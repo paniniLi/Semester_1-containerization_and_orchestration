@@ -9,8 +9,8 @@
 - `GET /health` - проверка работоспособности приложения;
 - `GET /eat?mb=N` - выделение и удержание N МБ оперативной памяти;
 - `GET /burn` - создание нагрузки на одно ядро CPU;
-- `GET /readFile` - проверка ограничений capabilities;
-- `GET /sysCall` - проверка seccomp.
+- `GET /changeTime` - попытка изменения системного времени для проверки capabilities и seccomp;
+- `POST /system/execute` - выполнение системной команды внутри среды приложения.
 
 Сервис работает на порту `8080`.
 
@@ -931,3 +931,31 @@ Tasks: 20 (limit: 20)
 
 ![doc/task4_changeTimeNotSupported.png](doc/task4_changeTimeNotSupported.png)
 </details>
+
+### Добавление `seccomp`-профилей
+Для демонстрации добавления `seccomp`-профилей воспользуемся той же функцией, что и в предыдущем пункте по смене системного времени `GET /changeTime`:
+
+1. Запустим приложение с `seccomp`-профилем: `systemd-run   --user   --unit=lab1-seccomp   -p SystemCallFilter='~clock_settime'   -p SystemCallErrorNumber=EPERM   /bin/bash "$(realpath ./startup.sh)`
+<details>
+<summary>Результат</summary>
+![doc/part4_seccomp.png](doc/part4_seccomp.png)
+</details>
+
+4. Попробуем открыть `TCP` соединение
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab1$ curl 'http://localhost:9191/changeTime'
+Failed to change system time.
+Exit code: 1
+date: cannot set date: Operation not permitted
+Sat Sep 19 12:00:00 PM +03 2026
+```
+</details>
+
+`Capabilities` - это набор прав, доступных `root`-пользователю. В эксперименте по смене системного времени представлено, что при запуске приложения из под `root` пользователя, дочерний процесс (запущенное приложение) наследовало его `capabilities` и могло изменять системное время устройства. При удалении `capability` CAP_SYS_TIME приложение как и прежде запускается под `root` пользователем, но с меньшим диапазоном прав, вследствие чего попытка изменить системное время повторно завершилось с ошибкой.
+
+`Seccomp`-профили ограничивают набор доступных процессу **системных вызовов**. Во втором эксперименте запуск приложения производится под `root` пользователем, с правами по смене времени `CAP_SYS_TIME`, но с запретом на системный вызов `clock_settime`, из-за чего смена времени для данного процесса запрещена.
+
+Таким образом, `Capability` - определяют **права** процесса, в то время как `seccomp`-профили определяют набор **запрещенных** системных вызовов. Запрет на выполнение системного вызова **сильнее** `capability`.
