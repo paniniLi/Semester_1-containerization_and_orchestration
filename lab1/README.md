@@ -676,6 +676,7 @@ MaxHeapSize=536870912
 cat /sys/fs/cgroup/lab1-memory/memory.events
 ```
 
+
 До превышения лимита:
 
 ```text
@@ -909,3 +910,24 @@ Tasks: 20 (limit: 20)
 ![Ограничение количества процессов](images/part3-pids-limit.png)
 
 Таким образом, контроллер `pids` в cgroups v2 позволяет ограничить количество процессов и потоков внутри группы. После достижения значения `pids.max` дальнейшие попытки создания процессов блокируются ядром.
+
+## Часть 4 - Права
+
+### Сброс лишних `Capabilities`
+Для демонстрации сброса лишних capabilities воспользуемся функцией `GET /changeTime`, которая меняет системное время на `19-09-2026 12:00:00`.
+
+1. Запустим приложение и проверим, что смена системного времени проходит: `sudo java -jar lib/lab1-1.0.0.jar --server.port=9191`
+2. Попробуем сменить системное время: `GET curl 'http://localhost:9191/changeTime'`
+<details>
+<summary>Результат</summary>
+
+![doc/task4_changeTime.png](doc/task4_changeTime.png)
+</details>
+
+2. Сбросим соответствующий `capability` и перезапустим приложение: `sudo capsh --drop=cap_sys_time -- -c 'exec java -jar lib/lab1-1.0.0.jar --server.port=9191'`
+3. Попробуем сменить системное время: `GET curl 'http://localhost:9191/changeTime'`
+<details>
+<summary>Результат</summary>
+
+![doc/task4_changeTimeNotSupported.png](doc/task4_changeTimeNotSupported.png)
+</details>
