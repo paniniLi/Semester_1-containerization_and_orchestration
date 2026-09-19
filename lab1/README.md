@@ -92,13 +92,16 @@
 ### Добавление `seccomp`-профилей
 Для демонстрации добавления `seccomp`-профилей воспользуемся той же функцией, что и в предыдущем пункте по смене системного времени `GET /changeTime`:
 
-1. Запустим приложение с `seccomp`-профилем: `systemd-run   --user   --unit=lab1-seccomp   -p SystemCallFilter='~clock_settime'   -p SystemCallErrorNumber=EPERM   /bin/bash "$(realpath ./startup.sh)`
+1. Запустим приложение без `seccomp`-профиля и проверим, что время опять можно изменить: `sudo systemd-run --unit=lab1-seccomp /bin/bash "$(realpath ./startup.sh)"`
+2. При вызове `GET /changeTime` время меняется на `19-09-2026 12:00:00`
+3. Запустим приложение с `seccomp`-профилем: `sudo systemd-run  --unit=lab1-seccomp -p SystemCallFilter='~clock_settime' -p SystemCallErrorNumber=EPERM   /bin/bash "$(realpath ./startup.sh)`
 <details>
 <summary>Результат</summary>
+
 ![doc/part4_seccomp.png](doc/part4_seccomp.png)
 </details>
 
-4. Попробуем открыть `TCP` соединение
+4. Попробуем сменить системное время
 <details>
 <summary>Результат</summary>
 
