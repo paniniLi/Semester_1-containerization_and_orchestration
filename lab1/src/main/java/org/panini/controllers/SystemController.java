@@ -9,10 +9,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 
 @RestController
 public class SystemController {
+    private final List<byte[]> memoryBlocks = new ArrayList<>();
 
     @GetMapping("/health")
     public ResponseEntity<String> getHealth() {
@@ -21,10 +26,15 @@ public class SystemController {
 
     @GetMapping("/eat")
     public ResponseEntity<String> getEat(@RequestParam("mb") int mb) {
-        if (mb < 0) return ResponseEntity.badRequest().body("Query-параметр mb должен быть строго положительным");
+        if (mb <= 0) {
+            return ResponseEntity.badRequest()
+                    .body("Query-параметр mb должен быть строго положительным");
+        }
 
-        byte[] block = new byte[mb];
-        return ResponseEntity.ok(String.format("Выделен %d байт", mb));
+        byte[] block = new byte[mb * 1024 * 1024];
+        memoryBlocks.add(block);
+
+        return ResponseEntity.ok(String.format("Выделено %d МБ", mb));
     }
 
     @GetMapping("/burn")

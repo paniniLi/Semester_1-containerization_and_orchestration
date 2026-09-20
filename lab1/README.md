@@ -1,72 +1,916 @@
-# Отчет по лабораторной работе №1 "Docker"
+# Лабораторная работа №1 - Свой Docker
 
-## Часть 0 - Свой сервис
-Язык сервиса - `Java` (см. подробнее версию `jdk`, и версии используемых библиотек в @lab1/pom.xml)
+## Часть 0 - Сервис
 
-Сервис реализует следующие `endpoints`:
-- `GET /health` — возвращает ok;
-- `GET /eat?mb=N` — выделяет N мегабайт памяти и держит их;
-- `GET /burn` — нагружает одно ядро CPU в бесконечном цикле;
+Для выполнения лабораторной работы используется HTTP-сервис на Java 21 с использованием Spring Boot.
 
-Дополнительные `endpoints,` реализованные для демонстрации результатов:
-- (**пункт 4**) `GET /changeTime` - меняет системное время на `19-09-2026 12:00:00`
-- (**пункт 6**) `POST /system/execute` - выполняет системную команду внутри среды, где запущено приложение и возвращает результат работы переданной команды
+Сервис предоставляет следующие эндпоинты:
 
-См. реализацию сервиса в @lab1/src.
+- `GET /health` - проверка работоспособности приложения;
+- `GET /eat?mb=N` - выделение и удержание N МБ оперативной памяти;
+- `GET /burn` - создание нагрузки на одно ядро CPU;
+- `GET /changeTime` - попытка изменения системного времени для проверки capabilities и seccomp;
+- `POST /system/execute` - выполнение системной команды внутри среды приложения.
 
-## Часть 1 - Запуск приложения без изоляций
-1. Собираем приложение: `mvn clean package`
-2. Переходим в @lab1/bin и запускаем скрипт @lab1/bin/startup.sh: `./startup.sh --server.port=9191`
-<details>
-  <summary>Результат</summary>
+См. реализацию сервиса в [lab1/src](lab1/src).
 
-```bash
-  .   ____          _            __ _ _
- /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
-( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
- \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
-  '  |____| .__|_| |_|_| |_\__, | / / / /
- =========|_|==============|___/=/_/_/_/
+## Часть 1 - Запуск напрямую
 
-:: Spring Boot ::                (v4.1.1)
+На первом этапе сервис запускается напрямую на хостовой системе как обычный Linux-процесс, без контейнерной изоляции и ограничений ресурсов.
 
-2026-09-19 13:42:15.918 [main] INFO  org.panini.Application - Starting Application v1.0.0 using Java 21.0.12 with PID 21038 (/home/pona/Documents/Semester_1-containerization_and_orchestration/lab1/lib/lab1-1.0.0.jar started by pona in /home/pona/Documents/Semester_1-containerization_and_orchestration/lab1/bin)
-2026-09-19 13:42:15.921 [main] DEBUG org.panini.Application - Running with Spring Boot v4.1.1, Spring v7.0.9
-2026-09-19 13:42:15.921 [main] INFO  org.panini.Application - No active profile set, falling back to 1 default profile: "default"
-2026-09-19 13:42:16.666 [main] INFO  o.s.boot.tomcat.TomcatWebServer - Tomcat initialized with port 9191 (http)
-2026-09-19 13:42:16.678 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-0.0.0.0-9191"]
-2026-09-19 13:42:16.681 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
-2026-09-19 13:42:16.681 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/11.0.24]
-2026-09-19 13:42:16.713 [main] INFO  o.s.b.w.c.s.WebApplicationContextInitializer - Root WebApplicationContext: initialization completed in 735 ms
-2026-09-19 13:42:16.754 [main] DEBUG org.panini.system.Logger - Filter 'logger' configured for use
-2026-09-19 13:42:17.006 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-0.0.0.0-9191"]
-2026-09-19 13:42:17.018 [main] INFO  o.s.boot.tomcat.TomcatWebServer - Tomcat started on port 9191 (http) with context path '/'
-2026-09-19 13:42:17.030 [main] INFO  org.panini.Application - Started Application in 1.542 seconds (process running for 2.086)
-```
-</details>
-
-3. Вызываем `curl 'http://localhost:9191/health'` и получаем ответ: `Приложение работает`
-<details>
-<summary>Результат</summary>
-
-![doc/task1_health.png](doc/task1_health.png)
-</details>
-
-4. Вызываем `pgrep -af '^java .*lab1-1.0.0.jar'`, получаем PID процесса `21038`
-<details>
-<summary>Результат</summary>
+Проект был собран с помощью Maven:
 
 ```bash
-21038 java -jar /home/pona/Documents/Semester_1-containerization_and_orchestration/lab1/bin/../lib/lab1-1.0.0.jar --server.port=9191
+mvn clean package -DskipTests
 ```
-</details>
 
-5. Убьем принудительно данный процесс через `shell`: `sudo kill -9 21038`, приложение завершилось, в логах видим: `Killed`
-<details>
-<summary>Результат</summary>
+После сборки сервис был запущен командой:
 
-![doc/task1_kill.png](doc/task1_kill.png)
-</details>
+```bash
+./bin/startup.sh
+```
+
+### Проверка работоспособности
+
+В браузере был открыт адрес:
+
+```text
+http://127.0.0.1:8080/health
+```
+
+Сервис успешно ответил:
+
+```text
+Приложение работает
+```
+
+![Проверка эндпоинта health](images/part1-health.png)
+
+### Процесс на хостовой системе
+
+Процесс приложения был найден командой:
+
+```bash
+pgrep -af 'lab1-1.0.0.jar'
+```
+
+Для просмотра PID, пользователя и команды запуска использовалась команда:
+
+```bash
+ps -o pid,user,cmd -p $(pgrep -f 'lab1-1.0.0.jar' | head -n1)
+```
+
+![Процесс приложения на хосте](images/part1-process.png)
+
+На данном этапе приложение является обычным процессом Linux. Оно видно среди остальных процессов хостовой системы, имеет обычный PID и запускается от имени пользователя хоста. Изоляция с помощью namespaces и ограничения ресурсов с помощью cgroups ещё не применяются.
+
+## Часть 2 - Изоляция с помощью namespaces
+
+Namespaces позволяют изолировать различные части окружения процесса. Процесс внутри namespace может видеть другое представление процессов, сети, hostname, пользователей и других ресурсов, хотя физически он продолжает выполняться на том же Linux-ядре.
+
+### 2.1. PID namespace
+
+PID namespace изолирует пространство идентификаторов процессов.
+
+Один и тот же процесс может иметь:
+
+- один PID с точки зрения хостовой системы;
+- другой PID внутри созданного PID namespace.
+
+Для создания отдельного PID namespace была выполнена команда:
+
+```bash
+sudo unshare --pid --fork --mount-proc bash
+```
+
+Параметры команды:
+
+- `sudo` - команда выполняется с повышенными привилегиями;
+- `unshare` - создаёт новые namespaces для запускаемого процесса;
+- `--pid` - создаёт новый PID namespace;
+- `--fork` - запускает дочерний процесс внутри нового namespace;
+- `--mount-proc` - монтирует отдельный `/proc`, соответствующий новому PID namespace;
+- `bash` - запускает оболочку Bash внутри созданного namespace.
+
+Без `--mount-proc` команда `ps` могла бы продолжить читать старый `/proc` хоста и показывать процессы всей системы, поэтому для корректной демонстрации PID namespace используется отдельный `/proc`.
+
+После входа в новый namespace был проверен PID текущей оболочки:
+
+```bash
+echo $$
+```
+
+Результат:
+
+```text
+1
+```
+
+Текущий `bash` внутри namespace получил PID `1`.
+
+PID 1 является первым процессом в данном PID namespace. Для процессов внутри этого namespace он играет ту же роль, которую init-процесс играет в обычной Linux-системе.
+
+Затем был просмотрен список доступных процессов:
+
+```bash
+ps -ef
+```
+
+Результат:
+
+```text
+UID    PID    PPID    CMD
+root     1       0    bash
+root     8       1    ps -ef
+```
+
+Внутри namespace видны только процессы, принадлежащие этому PID namespace. Процессы основной Ubuntu в данном списке отсутствуют.
+
+![Процессы внутри PID namespace](images/part2-pid-namespace.png)
+
+Для сравнения тот же процесс был найден снаружи namespace, в обычном терминале хостовой системы:
+
+```bash
+ps -o pid,ppid,user,cmd -p 12975
+```
+
+В данном запуске Bash, который внутри namespace имел PID `1`, на хосте имел PID `12975`.
+
+![PID процесса на хосте](images/part2-pid-host.png)
+
+Таким образом, PID процесса не является абсолютным значением для всей системы. Его значение зависит от PID namespace, из которого процесс наблюдается.
+
+Также благодаря отдельному `/proc` процессы внутри namespace не видят полный список процессов хостовой системы.
+
+### 2.2. UTS namespace
+
+UTS namespace изолирует hostname и domain name системы.
+
+Сначала был проверен hostname хостовой системы:
+
+```bash
+hostname
+```
+
+Результат:
+
+```text
+itmo-containers
+```
+
+После этого был создан отдельный UTS namespace:
+
+```bash
+sudo unshare --uts bash
+```
+
+Сразу после создания namespace hostname внутри него совпадал с hostname хоста:
+
+```bash
+hostname
+```
+
+Результат:
+
+```text
+itmo-containers
+```
+
+Затем hostname был изменён только внутри созданного namespace:
+
+```bash
+hostname lab1-container
+```
+
+После изменения:
+
+```bash
+hostname
+```
+
+Результат:
+
+```text
+lab1-container
+```
+
+![Hostname внутри UTS namespace](images/part2-uts-namespace.png)
+
+В отдельном терминале на хостовой системе hostname остался прежним:
+
+```bash
+hostname
+```
+
+Результат:
+
+```text
+itmo-containers
+```
+
+![Hostname хоста](images/part2-uts-host.png)
+
+Таким образом, изменение hostname внутри UTS namespace не влияет на hostname основной системы. Процессы в разных UTS namespaces могут видеть разные имена хоста, хотя работают на одном Linux-ядре.
+
+### 2.3. Network namespace
+
+Network namespace изолирует сетевой стек процесса: сетевые интерфейсы, IP-адреса и таблицу маршрутизации.
+
+Сначала на хостовой системе был просмотрен список сетевых интерфейсов:
+
+```bash
+ip addr
+```
+
+На хосте присутствовал интерфейс `enp0s3` с IP-адресом `10.0.2.15`.
+
+![Сеть хостовой системы](images/part2-net-host.png)
+
+После этого был создан отдельный network namespace:
+
+```bash
+sudo unshare --net bash
+```
+
+Внутри него снова был выполнен:
+
+```bash
+ip addr
+```
+
+В новом namespace присутствовал только loopback-интерфейс `lo`, находившийся в состоянии `DOWN`.
+
+Таблица маршрутизации была проверена командой:
+
+```bash
+ip route
+```
+
+Она оказалась пустой.
+
+Дополнительно была проверена доступность внешней сети:
+
+```bash
+ping -c 1 8.8.8.8
+```
+
+Результат:
+
+```text
+Сеть недоступна
+```
+
+![Сеть внутри network namespace](images/part2-net-namespace.png)
+
+Таким образом, новый network namespace получил отдельный сетевой стек и не унаследовал сетевой интерфейс и маршруты хостовой системы.
+
+### 2.4. User namespace
+
+User namespace изолирует идентификаторы пользователей и групп (`UID` и `GID`).
+
+Благодаря этому процесс может иметь UID `0` и считаться `root` внутри namespace, оставаясь при этом непривилегированным пользователем на хостовой системе.
+
+Сначала были проверены пользователь и его идентификаторы на хосте:
+
+```bash
+whoami
+id
+```
+
+Результат:
+
+```text
+anna
+uid=1000(anna) gid=1000(anna) ...
+```
+
+Таким образом, на хостовой системе процесс выполняется от имени обычного пользователя `anna` с UID `1000`.
+
+![Пользователь на хостовой системе](images/part2-user-host.png)
+
+После этого был создан новый user namespace:
+
+```bash
+unshare --user --map-root-user bash
+```
+
+Параметры команды:
+
+- `--user` - создаёт отдельный user namespace;
+- `--map-root-user` - отображает текущего пользователя хоста в пользователя с UID `0` внутри namespace;
+- `bash` - запускает оболочку внутри созданного namespace.
+
+Внутри namespace снова были выполнены:
+
+```bash
+whoami
+id
+```
+
+Результат:
+
+```text
+root
+uid=0(root) gid=0(root) ...
+```
+
+Таким образом, внутри user namespace текущий пользователь имеет UID `0` и воспринимается как `root`.
+
+Для просмотра отображения UID была выполнена команда:
+
+```bash
+cat /proc/self/uid_map
+```
+
+Результат:
+
+```text
+         0       1000          1
+```
+
+Значения означают:
+
+- `0` - UID внутри namespace;
+- `1000` - соответствующий UID на хостовой системе;
+- `1` - количество отображаемых UID.
+
+Следовательно, UID `0` (`root`) внутри namespace соответствует UID `1000` (`anna`) на хосте.
+
+Дополнительно была предпринята попытка прочитать файл `/etc/shadow`:
+
+```bash
+cat /etc/shadow
+```
+
+Результат:
+
+```text
+cat: /etc/shadow: Отказано в доступе
+```
+
+Несмотря на то, что внутри namespace пользователь отображается как `root`, он не получает полномочия настоящего root-пользователя хостовой системы.
+
+![Root внутри user namespace](images/part2-user-namespace.png)
+
+Таким образом, user namespace позволяет изолировать пространство UID и GID. Процесс может обладать UID `0` внутри namespace, при этом снаружи оставаться обычным непривилегированным пользователем.
+
+### 2.5. Mount namespace
+
+Mount namespace изолирует таблицу монтирования файловых систем.
+
+Это позволяет процессам внутри namespace иметь собственный набор точек монтирования, не изменяя представление файловых систем для процессов хостовой системы.
+
+Для создания отдельного mount namespace была выполнена команда:
+
+```bash
+sudo unshare --mount --propagation private bash
+```
+
+Параметры команды:
+
+- `--mount` - создаёт отдельный mount namespace;
+- `--propagation private` - делает изменения монтирований приватными для созданного namespace;
+- `bash` - запускает оболочку внутри нового namespace.
+
+Внутри namespace была создана директория:
+
+```bash
+mkdir -p /tmp/lab1-mount
+```
+
+После этого в неё была примонтирована временная файловая система `tmpfs` размером 10 МБ:
+
+```bash
+mount -t tmpfs -o size=10M tmpfs /tmp/lab1-mount
+```
+
+Наличие монтирования было проверено командой:
+
+```bash
+mount | grep lab1-mount
+```
+
+Результат показал, что внутри namespace в `/tmp/lab1-mount` действительно примонтирован `tmpfs`.
+
+Затем внутри примонтированной файловой системы был создан файл:
+
+```bash
+echo "inside mount namespace" > /tmp/lab1-mount/inside.txt
+```
+
+Проверка содержимого:
+
+```bash
+ls -la /tmp/lab1-mount
+```
+
+показала файл `inside.txt`.
+
+![Монтирование внутри mount namespace](images/part2-mount-namespace.png)
+
+После этого на хостовой системе была выполнена проверка:
+
+```bash
+mount | grep lab1-mount
+```
+
+Команда не вывела результатов, то есть монтирование `tmpfs`, созданное внутри namespace, на хосте отсутствует.
+
+Также была проверена директория:
+
+```bash
+ls -la /tmp/lab1-mount
+```
+
+На хосте каталог существует, однако файл `inside.txt` отсутствует.
+
+![Mount namespace с точки зрения хоста](images/part2-mount-host.png)
+
+Сам каталог `/tmp/lab1-mount` виден на хосте, поскольку создание директории является обычной операцией с общей файловой системой. Однако монтирование `tmpfs` поверх этой директории существует только внутри отдельного mount namespace.
+
+Таким образом, mount namespace изолирует точки монтирования: процессы внутри namespace могут видеть другое представление файловых систем, не изменяя таблицу монтирований хостовой системы.
+
+### 2.6. IPC namespace
+
+IPC namespace изолирует механизмы межпроцессного взаимодействия, в том числе System V shared memory, очереди сообщений и семафоры.
+
+Для создания отдельного IPC namespace была выполнена команда:
+
+```bash
+sudo unshare --ipc bash
+```
+
+После этого внутри namespace был создан сегмент разделяемой памяти размером 1024 байта:
+
+```bash
+ipcmk -M 1024
+```
+
+Результат:
+
+```text
+ID разделяемой памяти: 0
+```
+
+Список сегментов shared memory внутри namespace был просмотрен командой:
+
+```bash
+ipcs -m
+```
+
+Внутри namespace отображался созданный сегмент с `shmid = 0` и размером `1024` байта.
+
+![Shared memory внутри IPC namespace](images/part2-ipc-namespace.png)
+
+После этого на хостовой системе была выполнена та же команда:
+
+```bash
+ipcs -m
+```
+
+На хосте присутствовали собственные IPC-объекты различных процессов, однако сегмент `shmid = 0` размером 1024 байта, созданный внутри IPC namespace, отсутствовал.
+
+![IPC-объекты на хостовой системе](images/part2-ipc-host.png)
+
+Таким образом, IPC namespace предоставляет процессам отдельное пространство IPC-объектов. Объекты shared memory, созданные внутри namespace, не становятся видимыми процессам хостовой системы.
+
+### 2.7. Запуск сервиса со всеми namespaces
+
+После отдельной проверки каждого типа namespace сервис был запущен в окружении, объединяющем `user`, `pid`, `mount`, `net`, `uts` и `ipc` namespaces.
+
+Для создания окружения использовалась команда:
+
+```bash
+unshare \
+  --user --map-root-user \
+  --pid --fork \
+  --mount --mount-proc \
+  --net \
+  --uts \
+  --ipc \
+  bash
+```
+
+Внутри созданного окружения были выполнены проверки:
+
+```bash
+echo $$
+ps -ef
+hostname
+hostname lab1-container
+ip addr
+ip link set lo up
+whoami
+id
+cat /proc/self/uid_map
+```
+
+Результаты показали:
+
+- текущий процесс внутри PID namespace имеет PID `1`;
+- процессы хостовой системы внутри namespace не отображаются;
+- hostname внутри namespace изменён на `lab1-container`;
+- сетевой интерфейс хоста `enp0s3` отсутствует, доступен только отдельный loopback-интерфейс;
+- пользователь внутри namespace отображается как `root` с UID `0`;
+- UID `0` внутри namespace отображается в UID `1000` пользователя `anna` на хостовой системе.
+
+![Проверка объединённых namespaces](images/part2-all-namespaces-inside.png)
+
+После настройки окружения текущая оболочка была заменена процессом Java-сервиса:
+
+```bash
+exec ./bin/startup.sh
+```
+
+Использование `exec` позволяет заменить текущий процесс Bash на процесс Java без создания дополнительного дочернего процесса. Поэтому сервис наследует PID `1` внутри созданного PID namespace.
+
+Снаружи namespace сервис был найден командой:
+
+```bash
+pgrep -af 'lab1-1.0.0.jar'
+```
+
+На хостовой системе процесс имел обычный PID `7668` и выполнялся от имени пользователя `anna` с UID `1000`.
+
+Соответствие PID внутри и снаружи namespace было проверено командой:
+
+```bash
+grep NSpid /proc/$PID/status
+```
+
+Результат:
+
+```text
+NSpid:  7668  1
+```
+
+Первое значение является PID процесса на хостовой системе, второе - PID этого же процесса внутри созданного PID namespace.
+
+Hostname процесса был проверен через его UTS namespace:
+
+```bash
+sudo nsenter -t "$PID" -u hostname
+```
+
+Результат:
+
+```text
+lab1-container
+```
+
+При этом hostname хостовой системы остался прежним:
+
+```text
+itmo-containers
+```
+
+Работоспособность сервиса внутри его network namespace была проверена командой:
+
+```bash
+sudo nsenter -t "$PID" -n curl http://127.0.0.1:8080/health
+```
+
+Ответ:
+
+```text
+Приложение работает
+```
+
+![Сервис внутри namespaces с точки зрения хоста](images/part2-service-host-view.png)
+
+Таким образом, один процесс приложения одновременно работает в отдельных PID, mount, network, UTS, IPC и user namespaces. Внутри окружения сервис видит себя как PID `1` и root-пользователя, имеет собственный hostname и изолированную сеть, тогда как на хостовой системе тот же процесс остаётся обычным непривилегированным процессом пользователя `anna`.
+
+## Часть 3 - Ограничение ресурсов с помощью cgroups v2
+
+Cgroups позволяют ограничивать количество ресурсов, доступных процессам. В данной части были проверены ограничения оперативной памяти, CPU и количества процессов.
+
+### 3.1. Ограничение памяти
+
+Для проверки ограничения оперативной памяти была создана отдельная cgroup:
+
+```bash
+sudo mkdir /sys/fs/cgroup/lab1-memory
+```
+
+Для неё был установлен максимальный объём памяти 300 МБ:
+
+```bash
+echo $((300 * 1024 * 1024)) | sudo tee /sys/fs/cgroup/lab1-memory/memory.max
+```
+
+Полученное значение:
+
+```text
+314572800
+```
+
+Также для cgroup был запрещён swap:
+
+```bash
+echo 0 | sudo tee /sys/fs/cgroup/lab1-memory/memory.swap.max
+```
+
+Чтобы сервис с самого запуска учитывался внутри созданной cgroup, он был запущен непосредственно в `lab1-memory`.
+
+Для эксперимента JVM был явно задан максимальный размер heap 512 МБ:
+
+```text
+-Xmx512m
+```
+
+Это необходимо, поскольку JVM учитывает ограничения cgroups и при обычном запуске автоматически уменьшает максимально доступный heap. Без явного увеличения heap исключение `OutOfMemoryError` внутри JVM могло возникнуть раньше, чем процесс достиг бы ограничения `memory.max`.
+
+После запуска было проверено, что процесс находится в необходимой cgroup:
+
+```bash
+cat /proc/$PID/cgroup
+```
+
+Результат:
+
+```text
+0::/lab1-memory
+```
+
+Текущее потребление памяти процессом:
+
+```bash
+cat /sys/fs/cgroup/lab1-memory/memory.current
+```
+
+Результат:
+
+```text
+120721408
+```
+
+Максимально разрешённая память:
+
+```bash
+cat /sys/fs/cgroup/lab1-memory/memory.max
+```
+
+Результат:
+
+```text
+314572800
+```
+
+Также был проверен максимальный размер Java heap:
+
+```bash
+jcmd "$PID" VM.flags | grep -o 'MaxHeapSize=[0-9]*'
+```
+
+Результат:
+
+```text
+MaxHeapSize=536870912
+```
+
+Таким образом, JVM могла использовать heap до 512 МБ, тогда как cgroup ограничивала весь процесс 300 МБ памяти.
+
+Перед созданием нагрузки были проверены события cgroup:
+
+```bash
+cat /sys/fs/cgroup/lab1-memory/memory.events
+```
+
+
+До превышения лимита:
+
+```text
+max 0
+oom 0
+oom_kill 0
+```
+
+После этого сервису был отправлен запрос на выделение и удержание дополнительных 250 МБ памяти:
+
+```bash
+curl 'http://127.0.0.1:8080/eat?mb=250'
+```
+
+С учётом уже использовавшейся процессом памяти суммарное потребление превысило установленный лимит 300 МБ.
+
+Соединение было разорвано:
+
+```text
+curl: (52) Empty reply from server
+```
+
+После запроса процесс Java больше не отображался в списке процессов:
+
+```bash
+pgrep -af '^java .*lab1-1\.0\.0\.jar$'
+```
+
+Повторная проверка `memory.events` показала:
+
+```text
+max 23
+oom 1
+oom_kill 1
+```
+
+Значение `oom = 1` означает, что cgroup столкнулась с нехваткой доступной памяти, а `oom_kill = 1` подтверждает, что процесс был завершён OOM killer ядра Linux вследствие превышения ограничения `memory.max`.
+
+![OOM при превышении ограничения памяти](images/part3-memory-oom.png)
+
+Таким образом, cgroups v2 позволяют задать жёсткий предел потребления оперативной памяти процессом. При попытке превысить установленный `memory.max` ядро Linux завершает процесс с помощью OOM killer.
+
+### 3.2. Ограничение CPU
+
+Для проверки ограничения процессорного времени сервис был запущен в отдельной cgroup с ограничением CPU.
+
+Чтобы корректно создать cgroup в системе, управляемой `systemd`, использовалась transient-служба:
+
+```bash
+sudo systemd-run \
+  --unit=lab1-cpu \
+  --property=User=anna \
+  --property=CPUQuota=50% \
+  --working-directory=/home/anna/projects/Semester_1-containerization_and_orchestration/lab1 \
+  /home/anna/projects/Semester_1-containerization_and_orchestration/lab1/bin/startup.sh
+```
+
+Параметр:
+
+```text
+CPUQuota=50%
+```
+
+ограничивает сервис примерно половиной одного логического CPU.
+
+После запуска был определён путь к cgroup сервиса:
+
+```bash
+CG=$(sudo systemctl show -p ControlGroup --value lab1-cpu.service)
+echo "$CG"
+```
+
+Результат:
+
+```text
+/system.slice/lab1-cpu.service
+```
+
+Затем было проверено значение `cpu.max`:
+
+```bash
+cat "/sys/fs/cgroup$CG/cpu.max"
+```
+
+Результат:
+
+```text
+50000 100000
+```
+
+Первое значение задаёт процессорную квоту, второе - период в микросекундах.
+
+Таким образом, за каждые `100000` мкс процессам cgroup разрешено использовать CPU в течение `50000` мкс, что соответствует примерно 50% одного логического процессора.
+
+Перед созданием нагрузки была просмотрена статистика cgroup:
+
+```bash
+cat "/sys/fs/cgroup$CG/cpu.stat"
+```
+
+До нагрузки часть статистики имела вид:
+
+```text
+nr_periods 224
+nr_throttled 113
+throttled_usec 18685281
+```
+
+После этого был вызван эндпоинт `/burn`, который создаёт постоянную нагрузку на CPU:
+
+```bash
+curl http://127.0.0.1:8080/burn >/dev/null 2>&1 &
+```
+
+После 10 секунд работы:
+
+```bash
+sleep 10
+cat "/sys/fs/cgroup$CG/cpu.stat"
+```
+
+были получены следующие значения:
+
+```text
+nr_periods 509
+nr_throttled 248
+throttled_usec 32090725
+```
+
+Количество событий throttling увеличилось:
+
+```text
+nr_throttled: 113 → 248
+```
+
+Также увеличилось суммарное время, в течение которого cgroup была ограничена процессорной квотой:
+
+```text
+throttled_usec: 18685281 → 32090725
+```
+
+Это подтверждает, что процесс пытался использовать больше CPU, чем разрешено установленным значением `cpu.max`, после чего ядро Linux временно приостанавливало выполнение процессов cgroup.
+
+![CPU throttling при превышении квоты](images/part3-cpu-throttling.png)
+
+Таким образом, cgroups v2 позволяют ограничить доступное процессорное время. При превышении установленной квоты процесс не завершается, а его выполнение периодически приостанавливается механизмом CPU throttling.
+
+### 3.3. Ограничение количества процессов
+
+Для проверки ограничения количества процессов была создана отдельная cgroup с помощью transient-службы `systemd`.
+
+Тест был запущен командой:
+
+```bash
+sudo systemd-run \
+  --unit=lab1-pids-test \
+  --property=User=anna \
+  --property=TasksMax=20 \
+  --working-directory=/tmp \
+  /usr/bin/stress-ng --fork 100 --timeout 120s
+```
+
+Параметр:
+
+```text
+TasksMax=20
+```
+
+устанавливает ограничение на максимальное количество задач внутри cgroup.
+
+Для создания нагрузки использовался:
+
+```text
+stress-ng --fork 100
+```
+
+который пытается одновременно создавать большое количество дочерних процессов.
+
+После запуска был определён путь cgroup:
+
+```bash
+CG=$(sudo systemctl show -p ControlGroup --value lab1-pids-test.service)
+```
+
+Значение ограничения было проверено командой:
+
+```bash
+cat "/sys/fs/cgroup$CG/pids.max"
+```
+
+Результат:
+
+```text
+20
+```
+
+Текущее количество задач:
+
+```bash
+cat "/sys/fs/cgroup$CG/pids.current"
+```
+
+Результат:
+
+```text
+20
+```
+
+Таким образом, количество процессов достигло установленного предела, но не превысило его.
+
+Дополнительно была просмотрена статистика:
+
+```bash
+cat "/sys/fs/cgroup$CG/pids.events"
+```
+
+Результат:
+
+```text
+max 1399516
+```
+
+Положительное значение счётчика `max` означает, что процессы многократно пытались создать новые задачи после достижения `pids.max`, однако ядро Linux отклоняло эти попытки.
+
+Статус службы также показывал:
+
+```text
+Tasks: 20 (limit: 20)
+```
+
+![Ограничение количества процессов](images/part3-pids-limit.png)
+
+Таким образом, контроллер `pids` в cgroups v2 позволяет ограничить количество процессов и потоков внутри группы. После достижения значения `pids.max` дальнейшие попытки создания процессов блокируются ядром.
+
 
 ## Часть 4 - Права
 
@@ -119,6 +963,213 @@ Sat Sep 19 12:00:00 PM +03 2026
 `Seccomp`-профили ограничивают набор доступных процессу **системных вызовов**. Во втором эксперименте запуск приложения производится под `root` пользователем, с правами по смене времени `CAP_SYS_TIME`, но с запретом на системный вызов `clock_settime`, из-за чего смена времени для данного процесса запрещена.
 
 Таким образом, `Capability` - определяют **права** процесса, в то время как `seccomp`-профили определяют набор **запрещенных** системных вызовов. Запрет на выполнение системного вызова **сильнее** `capability`.
+
+## Часть 5 - Свой Docker
+
+На предыдущих этапах были отдельно рассмотрены основные механизмы контейнеризации Linux: namespaces, cgroups, capabilities и seccomp. На данном этапе они были объединены в единый скрипт `mydocker.sh`.
+
+Скрипт создаёт для Java-сервиса отдельные namespaces, задаёт ограничения ресурсов через cgroups и ограничивает доступные процессу привилегии.
+
+### Запуск через `mydocker.sh`
+
+Скрипт запускается командой:
+
+```bash
+./mydocker.sh
+```
+
+В процессе запуска создаются отдельные:
+
+- PID namespace;
+- user namespace;
+- mount namespace;
+- network namespace;
+- UTS namespace;
+- IPC namespace.
+
+Для UTS namespace устанавливается hostname:
+
+```text
+lab1-container
+```
+
+Для Java-процесса было получено:
+
+```text
+Java host PID: 2755930
+
+NSpid: 2755930 1
+```
+
+Это означает, что на хостовой системе процесс имеет PID `2755930`, а внутри собственного PID namespace является процессом с PID `1`.
+
+Также были установлены ограничения ресурсов:
+
+```text
+Memory limit:
+314572800
+
+CPU limit:
+50000 100000
+
+PIDs limit:
+64
+```
+
+То есть сервис ограничен 300 МБ оперативной памяти, половиной одного CPU и 64 задачами.
+
+После применения изоляции и ограничений сервис успешно прошёл health-check:
+
+```text
+Приложение работает
+Service is healthy
+```
+
+![Запуск сервиса через mydocker.sh](images/part5-mydocker-run.png)
+
+### Проверка ограничений прав
+
+Для итогового запуска у процесса отключается capability CAP_SYS_TIME, а seccomp-фильтр запрещает системный вызов clock_settime.
+
+Попытка изменить системное время:
+
+```bash
+sudo nsenter -t "$PID" -n curl http://127.0.0.1:8080/changeTime
+```
+
+завершается ошибкой:
+
+```text
+Failed to change system time.
+Exit code: 1
+date: невозможно установить дату: Операция не позволена
+```
+
+После этого `/health` продолжает успешно отвечать:
+
+```text
+Приложение работает
+```
+
+Таким образом, ограничения прав применяются к процессу, но не мешают основной работе сервиса.
+
+![Проверка ограничений прав в mydocker.sh](images/part5-mydocker-security.png)
+
+### Запуск через Docker
+
+Для сравнения тот же Java-сервис был собран в Docker-образ:
+
+```bash
+sudo docker build -f basic.dockerfile -t lab1-api .
+```
+
+Контейнер был запущен со схожими ограничениями:
+
+```bash
+sudo docker run --rm \
+  --name lab1-docker \
+  --memory=300m \
+  --memory-swap=300m \
+  --cpus=0.5 \
+  --pids-limit=64 \
+  --cap-drop=SYS_TIME \
+  -p 8080:8080 \
+  lab1-api
+```
+
+После запуска проверка:
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+возвращает:
+
+```text
+Приложение работает
+```
+
+Попытка изменить системное время:
+
+```bash
+curl http://127.0.0.1:8080/changeTime
+```
+
+завершается ошибкой:
+
+```text
+Failed to change system time.
+Exit code: 1
+date: cannot set date: Permission denied
+```
+
+При этом повторный запрос `/health` снова успешно выполняется.
+
+![Проверка ограничений прав в Docker](images/part5-docker-security.png)
+
+### Проверка ограничений Docker
+
+Параметры контейнера были проверены командой:
+
+```bash
+sudo docker inspect lab1-docker \
+  --format 'Memory={{.HostConfig.Memory}} NanoCPUs={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}'
+```
+
+Результат:
+
+```text
+Memory=314572800
+NanoCPUs=500000000
+PidsLimit=64
+```
+
+Java-приложение внутри контейнера является процессом с PID `1`:
+
+```text
+UID    PID   PPID   CMD
+root     1      0   java -jar app.jar
+```
+
+Также значения cgroups v2 внутри контейнера совпадают с заданными ограничениями:
+
+```text
+memory.max:
+314572800
+
+cpu.max:
+50000 100000
+
+pids.max:
+64
+```
+
+![Проверка cgroup-лимитов Docker](images/part5-docker-limits.png)
+
+### Сравнение `mydocker.sh` и Docker
+
+| Механизм | `mydocker.sh` | Docker |
+|---|---|---|
+| PID namespace | создаётся через `unshare` | создаётся автоматически |
+| UTS namespace | создаётся через `unshare` | создаётся автоматически |
+| Network namespace | создаётся через `unshare` | создаётся автоматически |
+| Mount namespace | создаётся через `unshare` | создаётся автоматически |
+| IPC namespace | создаётся через `unshare` | создаётся автоматически |
+| User namespace | создаётся вручную | зависит от конфигурации Docker |
+| Ограничение памяти | `MemoryMax=300M` | `--memory=300m` |
+| Ограничение CPU | `CPUQuota=50%` | `--cpus=0.5` |
+| Ограничение процессов | `TasksMax=64` | `--pids-limit=64` |
+| Capabilities | задаются через systemd | управляются через `--cap-drop` |
+| Seccomp | фильтр задаётся вручную | Docker применяет собственный seccomp-профиль |
+| Root filesystem | отдельный rootfs не создаётся | создаётся из Docker image |
+| Сеть наружу | проброс портов вручную не реализован | используется `-p 8080:8080` |
+| Образы и слои | отсутствуют | используются Docker images и layers |
+| Управление контейнером | реализовано скриптом и systemd | выполняется Docker |
+
+Таким образом, `mydocker.sh` вручную объединяет базовые механизмы ядра Linux, используемые для контейнеризации: namespaces, cgroups, capabilities и seccomp.
+
+Docker использует те же фундаментальные механизмы, но дополнительно автоматизирует создание изолированной файловой системы, работу с образами и слоями, сетевую конфигурацию, проброс портов и управление жизненным циклом контейнера.
+
 
 ## Часть 6 - Образы
 См. реализацию одноэтапного `dockerfile` в файле [basic.dockerfile](basic.dockerfile), реализацию `multi-stage` сборки в файле [multistage.dockerfile](multistage.dockerfile).
@@ -195,10 +1246,10 @@ Sat Sep 19 12:00:00 PM +03 2026
 ### Сравнение Gvisor и стандартного контейнера
 1. Соберем новый образ с добавленным endpoint-ом: `sudo docker build --progress=plain -f multistage.dockerfile -t lab1-multistage-image:1.1 .`
 2. Запустим 2 контейнера с приложением:
-  * Контейнер БЕЗ изоляции gvisor будет принимать http-запросы на порту 8080: `sudo docker run --rm --name lab1-container -p 8080:8080 lab1-multistage-image:1.1`
-  * Контейнер с изоляцией gvisor будет принимать http-запросы на порту 9090: `sudo docker run --rm --runtime=runsc --name lab1-container-gvisor -p 9090:8080 lab1-multistage-image:1.1`
+* Контейнер БЕЗ изоляции gvisor будет принимать http-запросы на порту 8080: `sudo docker run --rm --name lab1-container -p 8080:8080 lab1-multistage-image:1.1`
+* Контейнер с изоляцией gvisor будет принимать http-запросы на порту 9090: `sudo docker run --rm --runtime=runsc --name lab1-container-gvisor -p 9090:8080 lab1-multistage-image:1.1`
 
-Выполним команду `uname -a` в каждом из контейнеров: 
+Выполним команду `uname -a` в каждом из контейнеров:
 ```bash
 pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab1$ echo '{"command": "uname -a"}' | curl -X POST http://localhost:8080/system/execute -H "Content-Type: application/json" -d @-
 Linux 4499f72d22c5 6.8.0-138-generic #138~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Fri Aug  7 13:43:15 UTC  x86_64 GNU/Linux
