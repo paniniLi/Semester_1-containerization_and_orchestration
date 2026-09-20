@@ -119,8 +119,47 @@ ok
 ```
 </details>
 
-
 ## Часть 1 - Метрики (Prometheus + Grafana)
+Развернем Grafana отдельно от приложения `api` в namespace `monitoring`. Для приложения и системы наблюдаемости будут использованы независимые `helm`-релизы:
+- релиз `api`, расположенный в namespace `lab2`, управляет приложением
+- релиз `monitoring`, развернутый в namespace `monitoring`, управляет компонентами для обеспечения наблюдаемости приложений
+
+Данное разделение позволяет обновлять и удалять приложение `api` независимо от системы мониторинга.
+
+К уже установленному релизу `api` в том же кластере установим observability-релиз. Предварительно необходимо локально в директории [observability](observability) создать файл `grafana-secret.values.yaml` по аналогии с `grafana-secret.values.example.yaml` для настройки параметров авторизации в Grafana.
+
+**Примечание: если данный файл не будет создан, то дашборд Grafana будет доступен без окна аутентификации, в таком случае при установке helm-релиза ниже необходимо убрать опцию `--values ./observability/grafana-secret.values.yaml`.**
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm upgrade --install monitoring ./observability --namespace monitoring --create-namespace --values ./observability/grafana-secret.values.yaml --wait --timeout 10m
+Release "monitoring" has been upgraded. Happy Helming!
+NAME: monitoring
+LAST DEPLOYED: Sun Sep 20 23:48:19 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 2
+TEST SUITE: None
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ kubectl get pod,service -n monitoring
+NAME                                      READY   STATUS    RESTARTS   AGE
+pod/monitoring-grafana-79778f445b-fv98f   1/1     Running   0          65s
+
+NAME                         TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE
+service/monitoring-grafana   NodePort   10.105.1.88   <none>        80:30000/TCP   10m
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ echo "http://$(minikube ip):30000"
+http://192.168.49.2:30000
+```
+</details>
+
+Перейдем по выведенной ссылке, введем логин/пароль, заданный в `grafana-secret.values.yaml`:
+<details>
+<summary>Результат</summary>
+
+![images/part1_grafana.png](images/part1_grafana.png)
+</details>
 
 ## Часть 2 - Логи (Loki + Grafana)
 
