@@ -1,0 +1,40 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+
+project:
+  version: @project.version@
+
+spring:
+  application:
+    name: lab2-api
+  main:
+    allow-circular-references: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+      base-path: /
+      path-mapping:
+        prometheus: metrics
+
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+  tracing:
+    sampling:
+      probability: 1.0
+
+  otlp:
+    metrics:
+      export:
+        enabled: false
+
+logging:
+  structured:
+    format:
+      console: logstash
