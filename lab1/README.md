@@ -12,7 +12,7 @@
 - `GET /changeTime` - попытка изменения системного времени для проверки capabilities и seccomp;
 - `POST /system/execute` - выполнение системной команды внутри среды приложения.
 
-См. реализацию сервиса в [lab1/src](lab1/src).
+См. реализацию сервиса в [src](src).
 
 ## Часть 1 - Запуск напрямую
 
@@ -922,7 +922,7 @@ Tasks: 20 (limit: 20)
 <details>
 <summary>Результат</summary>
 
-![doc/task4_changeTime.png](doc/task4_changeTime.png)
+![images/task4_changeTime.png](images/task4_changeTime.png)
 </details>
 
 2. Сбросим соответствующий `capability` и перезапустим приложение: `sudo capsh --drop=cap_sys_time -- -c 'exec java -jar lib/lab1-1.0.0.jar --server.port=9191'`
@@ -930,7 +930,7 @@ Tasks: 20 (limit: 20)
 <details>
 <summary>Результат</summary>
 
-![doc/task4_changeTimeNotSupported.png](doc/task4_changeTimeNotSupported.png)
+![images/task4_changeTimeNotSupported.png](images/task4_changeTimeNotSupported.png)
 </details>
 
 ### Добавление `seccomp`-профилей
@@ -942,7 +942,7 @@ Tasks: 20 (limit: 20)
 <details>
 <summary>Результат</summary>
 
-![doc/part4_seccomp.png](doc/part4_seccomp.png)
+![images/part4_seccomp.png](images/part4_seccomp.png)
 </details>
 
 4. Попробуем сменить системное время
@@ -1179,7 +1179,7 @@ Docker использует те же фундаментальные механ�
 <details>
 <summary>Результат</summary>
 
-![doc/part6-buildBasicImage.png](doc/part6-buildBasicImage.png)
+![images/part6-buildBasicImage.png](images/part6-buildBasicImage.png)
 
 </details>
 
@@ -1187,18 +1187,18 @@ Docker использует те же фундаментальные механ�
 <details>
 <summary>Результат</summary>
 
-![doc/part6-buildMultistage1.png](doc/part6-buildMultistage1.png)
+![images/part6-buildMultistage1.png](images/part6-buildMultistage1.png)
 
-![doc/part6-buildMultistage2.png](doc/part6-buildMultistage2.png)
+![images/part6-buildMultistage2.png](images/part6-buildMultistage2.png)
 
-![doc/part6-buildMultistage3.png](doc/part6-buildMultistage3.png)
+![images/part6-buildMultistage3.png](images/part6-buildMultistage3.png)
 </details>
 
 3. При повторной сборки `multi-stage` образа можно заметить, что из кэша берутся все слои, так как исходники кода (и `dockerfile`) не менялись:
 <details>
 <summary>Результат</summary>
 
-![doc/part6-rebuildMultistage.png](doc/part6-rebuildMultistage.png)
+![images/part6-rebuildMultistage.png](images/part6-rebuildMultistage.png)
 </details>
 
 4. Сравним размер и число слоев собранных образов в пунктах 1 и 3:
@@ -1207,24 +1207,24 @@ Docker использует те же фундаментальные механ�
 <details>
 <summary>Результат</summary>
 
-![img_1.png](doc/part6_dockerImage.png)
-![img.png](doc/part6_imageLayers.png)
+![img_1.png](images/part6_dockerImage.png)
+![img.png](images/part6_imageLayers.png)
 </details>
 
 5. Запустим контейнер на основе образа `lab1-multistage-image:1.0` и запишем туда файл:
 <details>
 <summary>Результат</summary>
 
-![doc/part6_createFile1.png](doc/part6_createFile1.png)
-![doc/part6_createFile2.png](doc/part6_createFile2.png)
+![images/part6_createFile1.png](images/part6_createFile1.png)
+![images/part6_createFile2.png](images/part6_createFile2.png)
 </details>
 
 6. Пересоздадим контейнер и убедимся, что файл удален, так как при удалении контейнера записываемые в него данные не сохраняются, контейнер пересоздается на основе ранее созданного **нередактируемого** образа:
 <details>
 <summary>Результат</summary>
 
-![doc/part6_createFile1.png](doc/part6_createFile3.png)
-![doc/part6_createFile2.png](doc/part6_createFile4.png)
+![images/part6_createFile1.png](images/part6_createFile3.png)
+![images/part6_createFile2.png](images/part6_createFile4.png)
 </details>
 
 7. Создадим том, запустим контейнер с подключенным томом и затем пересоздадим контейнер:
@@ -1237,7 +1237,7 @@ Docker использует те же фундаментальные механ�
 <details>
 <summary>Результат</summary>
 
-![doc/part6_tom1.png](doc/part6_tom1.png)
+![images/part6_tom1.png](images/part6_tom1.png)
 </details>
 
 ## Часть 7 - Gvisor
