@@ -1,0 +1,9 @@
+image:
+  repository: lab2-api
+  tag: "1.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 30080

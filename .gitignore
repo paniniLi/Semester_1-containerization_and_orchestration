@@ -2,7 +2,8 @@ target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-/lab1/lib/*
+/**/lib/*
+.agents/*
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
