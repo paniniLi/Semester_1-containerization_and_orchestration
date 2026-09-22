@@ -16,6 +16,7 @@ spec:
       labels:
         app.kubernetes.io/name: lab2-api
         app.kubernetes.io/instance: {{ .Release.Name }}
+        logs.collect: "{{ .Values.logs.collect }}"
     spec:
       containers:
         - name: api

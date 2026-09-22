@@ -20,7 +20,7 @@
 - OpenTelemetry tracing;
 - Dockerfile для сборки и запуска сервиса в контейнере.
 
-однимем локальный Kubernetes-кластер с помощью `minikube` и установим приложение через `helm`. В запущщеном контейнере будет работать приложение из [src](src):
+Поднимем локальный Kubernetes-кластер с помощью `minikube` и установим приложение через `helm`. В запущщеном контейнере будет работать приложение из [src](src):
 1. Запустим кластер: `minikube start --driver=docker --cpus=4 --memory=6144`
 <details>
 <summary>Результат</summary>
@@ -162,6 +162,211 @@ http://192.168.49.2:30000
 </details>
 
 ## Часть 2 - Логи (Loki + Grafana)
+Подключим хранилище логов Loki и агент Grafana Alloy для обнаружения и сбора логов с Pod-ов как зависимости Helm chart `monitoring`. Схема взаимодействия компонентов следующая:
+1. Запущенное приложение `api` пишет JSON-логи в stdout/stderr контейнера
+2. Container runtime сохраняет логи приложения на ноде
+3. Kubelet предоставляет доступ к сохраненным на ноде логам через Kubernetes API
+4. Агент Grafana Alloy собирает логи с подов с меткой logs.collect=true, читая их через Kubernetes API и отправляет прочитанные записи в Loki
+
+Проверим, что приложение пишет логи с помощью kubectl: `kubectl get pods -A`
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ kubectl get pods -A
+NAMESPACE     NAME                                  READY   STATUS    RESTARTS        AGE
+kube-system   coredns-559f6c778d-tmkhc              1/1     Running   1 (9m4s ago)    47h
+kube-system   etcd-minikube                         1/1     Running   1 (9m4s ago)    47h
+kube-system   kindnet-7k54d                         1/1     Running   1 (9m4s ago)    47h
+kube-system   kube-apiserver-minikube               1/1     Running   1 (9m4s ago)    47h
+kube-system   kube-controller-manager-minikube      1/1     Running   1 (9m4s ago)    47h
+kube-system   kube-proxy-qfpmd                      1/1     Running   1 (9m4s ago)    47h
+kube-system   kube-scheduler-minikube               1/1     Running   1 (9m4s ago)    47h
+kube-system   storage-provisioner                   1/1     Running   2 (8m48s ago)   47h
+lab2          api-75bcffb478-wl2xs                  1/1     Running   1 (9m4s ago)    46h
+monitoring    monitoring-grafana-79778f445b-fv98f   1/1     Running   1 (9m4s ago)    43h
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ kubectl logs -f -n lab2 api-75bcffb478-wl2xs
+{"@timestamp":"2026-09-22T16:05:46.067576187Z","@version":"1","message":"Starting Application v1.0.0 using Java 21.0.12 with PID 1 (/app/app.jar started by appuser in /app)","logger_name":"org.panini.Application","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:46.082788069Z","@version":"1","message":"No active profile set, falling back to 1 default profile: \"default\"","logger_name":"org.panini.Application","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:47.534850517Z","@version":"1","message":"Tomcat initialized with port 8080 (http)","logger_name":"org.springframework.boot.tomcat.TomcatWebServer","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:47.551044624Z","@version":"1","message":"Starting service [Tomcat]","logger_name":"org.apache.catalina.core.StandardService","thread_name":"main","level":"INFO","level_value":20000}
+{"@timestamp":"2026-09-22T16:05:47.551570034Z","@version":"1","message":"Starting Servlet engine: [Apache Tomcat/11.0.24]","logger_name":"org.apache.catalina.core.StandardEngine","thread_name":"main","level":"INFO","level_value":20000}
+{"@timestamp":"2026-09-22T16:05:47.578750076Z","@version":"1","message":"Root WebApplicationContext: initialization completed in 1417 ms","logger_name":"org.springframework.boot.web.context.servlet.WebApplicationContextInitializer","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:48.753252935Z","@version":"1","message":"Exposing 1 endpoint beneath base path ''","logger_name":"org.springframework.boot.actuate.endpoint.web.EndpointLinksResolver","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:48.834539914Z","@version":"1","message":"Tomcat started on port 8080 (http) with context path '/'","logger_name":"org.springframework.boot.tomcat.TomcatWebServer","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:48.849767025Z","@version":"1","message":"Started Application in 3.447 seconds (process running for 4.395)","logger_name":"org.panini.Application","thread_name":"main","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:49.907911058Z","@version":"1","message":"Initializing Spring DispatcherServlet 'dispatcherServlet'","logger_name":"org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/]","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000}
+{"@timestamp":"2026-09-22T16:05:49.914128329Z","@version":"1","message":"Initializing Servlet 'dispatcherServlet'","logger_name":"org.springframework.web.servlet.DispatcherServlet","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:49.915824161Z","@version":"1","message":"Completed initialization in 1 ms","logger_name":"org.springframework.web.servlet.DispatcherServlet","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
+{"@timestamp":"2026-09-22T16:05:49.982331051Z","@version":"1","message":"Health request","logger_name":"org.panini.controllers.SystemController","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"traceId":"6e7e5fd7dfb34ae4fd9ad9b6f5c0850c","spanId":"13cfbafbfdbb7995","trace_id":"6e7e5fd7dfb34ae4fd9ad9b6f5c0850c","endpoint":"/health"}
+```
+</details>
+
+Видим, что логи приложения успешно пишутся в stdout Pod. Добавим в Helm-релиз мониторинга установку Loki - хранилища логов и Grafana Alloy - агента сборщика логов:
+1. Обновим репозитории:
+  * `helm repo update grafana-community`
+  * `helm repo add grafana https://grafana.github.io/helm-charts`
+  * `helm repo update grafana`
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm repo update grafana-community
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "grafana-community" chart repository
+Update Complete. ⎈Happy Helming!⎈
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm repo add grafana https://grafana.github.io/helm-charts
+"grafana" has been added to your repositories
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm repo update grafana
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "grafana" chart repository
+Update Complete. ⎈Happy Helming!⎈
+```
+</details>
+
+2. Добавим зависимости Loki и Grafana Alloy в [lab2/observability/Chart.yaml](observability/Chart.yaml):
+```yaml
+dependencies:
+  - name: loki
+    version: "18.13.4"
+    repository: https://grafana-community.github.io/helm-charts
+    condition: loki.enabled
+
+  - name: alloy
+    version: "1.12.1"
+    repository: https://grafana.github.io/helm-charts
+    condition: alloy.enabled
+```
+
+3. Скачаем указанные зависимости:
+   * `helm dependency update ./observability`
+   * `helm dependency list ./observability`
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm dependency update ./observability
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "grafana-community" chart repository
+...Successfully got an update from the "grafana" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 3 charts
+Downloading grafana from repo https://grafana-community.github.io/helm-charts
+Downloading loki from repo https://grafana-community.github.io/helm-charts
+Downloading alloy from repo https://grafana.github.io/helm-charts
+Deleting outdated charts
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm dependency list ./observability
+NAME   	VERSION	REPOSITORY                                     	STATUS
+grafana	12.8.0 	https://grafana-community.github.io/helm-charts	ok    
+loki   	18.13.4	https://grafana-community.github.io/helm-charts	ok    
+alloy  	1.12.1 	https://grafana.github.io/helm-charts          	ok
+```
+</details>
+
+4. Настроим в [lab2/observability/values.yaml](observability/values.yaml) Loki и Grafana Alloy
+5. После добавления label `logs.collect="true"` необходимо обновить релиз приложения `helm upgrade --install api ./install --namespace lab2 --create-namespace`:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm upgrade --install api ./install \
+      --namespace lab2 \
+      --create-namespace
+Release "api" has been upgraded. Happy Helming!
+NAME: api
+LAST DEPLOYED: Tue Sep 22 21:24:23 2026
+NAMESPACE: lab2
+STATUS: deployed
+REVISION: 4
+TEST SUITE: None
+```
+</details>
+
+6. Обновим Helm-релиз `monitoring` и проверим доступность записи и чтения в Loki:
+   * `helm upgrade --install monitoring ./observability \
+    --namespace monitoring \
+    --values ./observability/grafana-secret.values.yaml \
+    --wait \
+    --timeout 10m`
+   * `helm test monitoring -n monitoring --logs`
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm upgrade --install monitoring ./observability \
+    --namespace monitoring \
+    --values ./observability/grafana-secret.values.yaml \
+    --wait \
+    --timeout 10m
+Release "monitoring" has been upgraded. Happy Helming!
+NAME: monitoring
+LAST DEPLOYED: Tue Sep 22 21:29:13 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 6
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm test monitoring -n monitoring --logs
+NAME: monitoring
+LAST DEPLOYED: Tue Sep 22 21:29:13 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 6
+TEST SUITE:     loki-helm-test
+Last Started:   Tue Sep 22 22:33:24 2026
+Last Completed: Tue Sep 22 22:33:28 2026
+Phase:          Succeeded
+
+POD LOGS: loki-helm-test
+=== RUN   TestCanary
+=== RUN   TestCanary/Canary_should_have_entries
+    canary_test.go:155: loki_canary_entries_total => 7551
+=== RUN   TestCanary/Canary_should_not_have_missed_any_entries
+    canary_test.go:155: loki_canary_missing_entries_total => 0
+--- PASS: TestCanary (0.00s)
+    --- PASS: TestCanary/Canary_should_have_entries (0.00s)
+    --- PASS: TestCanary/Canary_should_not_have_missed_any_entries (0.00s)
+PASS
+```
+![images/part2_canaryResult.png](images/part2_canaryResult.png)
+</details>
+
+7. Проверим статус запущенных Pod-ов и DaemonSet-ов Helm-релиза `monitoring`:
+   * `kubectl get pods -n monitoring`
+   * `kubectl get daemonset monitoring-alloy -n monitoring`
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ kubectl get pods -n monitoring
+NAME                                       READY   STATUS    RESTARTS   AGE
+monitoring-alloy-lfp5k                     1/1     Running   0          29s
+monitoring-grafana-8649bd9b8f-rmlvm        1/1     Running   0          58m
+monitoring-loki-0                          2/2     Running   0          83m
+monitoring-loki-canary-v6sgl               1/1     Running   0          62m
+monitoring-loki-gateway-6c6495f86b-9bmzd   2/2     Running   0          83m
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$   kubectl get daemonset monitoring-alloy -n monitoring
+NAME               DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+monitoring-alloy   1         1         1       1            1           <none>          84m
+```
+</details>
+
+8. Откроем интерфейс Grafana, вызовем метод `GET /fail` и найдем соответствующую запись об ошибке в Loki:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ curl -i "http://$(minikube ip):30080/fail"
+HTTP/1.1 500 
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 21
+Date: Tue, 22 Sep 2026 18:31:31 GMT
+Connection: close
+
+Internal server error
+```
+![images/part2_result.png](images/part2_result.png)
+</details>
 
 ## Часть 3 - Трейсы (OpenTelemetry + Jaeger)
 

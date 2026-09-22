@@ -1,17 +1,168 @@
+## Настройки Grafana
 grafana:
-  enabled: true
+  enabled: true # устанавливаем Grafana
   rbac:
     namespaced: true
   service:
     type: NodePort
-    port: 80
-    nodePort: 30000
+    port: 80 # порт Kubernetes Service внутри кластера
+    nodePort: 30000 # открываем Grafana на указанном порту каждой Kubernetes-нода ???
   persistence:
-    enabled: false
+    enabled: false # пользовательские настройки Grafana удалятся после пересоздания pod Grafana
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources: # список источников данных
+        - name: Loki
+          uid: loki
+          type: loki
+          access: proxy # запросы к Loki выполняет backend Grafana, а не браузер пользователя
+          # Grafana и Loki развернуты одним Helm-релизом в одном namespace,
+          # поэтому достаточно короткого DNS-имени сервиса. Имя релиза
+          # Helm подставляет автоматически.
+          url: 'http://{{ .Release.Name }}-loki-gateway'
+          isDefault: false
+          editable: false
 
 ## Параметры аутентификации задаются в файле grafana-secret.values.yaml и передаются в параметры обновления Helm-релиза.
-## По-умолчанию аутентификация отключена.
+## По-умолчанию включена автоматическая генерация пароля. Узнать пароль можно с помощью команды:
+## kubectl get secret monitoring-grafana -n monitoring  -o jsonpath='{.data.admin-password}' | base64 -d
 grafanaCredentials:
   create: false
   username: ""
   password: ""
+
+## Настройки хранилища логов Loki
+loki:
+  enabled: true
+  deploymentMode: Monolithic # все функции Loki запускаются в одном процессе (подходит для небольшого кластера)
+
+  loki:
+    auth_enabled: false
+
+    commonConfig:
+      replication_factor: 1 # количество репликаций данных
+
+    storage:
+      type: filesystem # храним данные в файловой системе
+
+    schemaConfig:
+      configs:
+        - from: "2026-09-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+
+  singleBinary: # единственный экземпляр Loki
+    replicas: 1 # количество запускаемых Pod-ов
+    persistence:
+      enabled: true # создаем постоянное хранилище логов PVC, чтобы при рестарте Loki не затерлись данные
+      size: 5Gi
+      storageClass: standard
+      enableStatefulSetAutoDeletePVC: false
+
+  ## Выключаем запуск лишних Pod-ов, так как используем Loki в режиме Monolithic
+  backend:
+    replicas: 0
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+
+  ## Отключаем использование кэша, так как для лабораторной работы это избыточно
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
+  ## Запускаем Loki Canary для проверки работоспособности Loki
+  ## (регулярно создает тестовые записи и проверяет, что их можно найти в Loki)
+  lokiCanary:
+    enabled: true
+    push: true # Canary самостоятельно отправляет записи в Loki в обход Grafana Alloy
+
+  ## Создаем Helm test pod и запускаем проверку: helm test monitoring -n monitoring
+  test:
+    enabled: true
+
+## Настройки Grafana Alloy
+alloy:
+  enabled: true
+
+  configReloader:
+    enabled: false # отключаем автоматическое отслеживание изменения ConfigMap
+
+  controller:
+    type: daemonset # запускаем агент-сборщик логов на каждой Kubernetes-ноде
+
+  alloy:
+    configMap:
+      content: |-
+        // Находим pod'ы только на той ноде, где работает данный Alloy.
+        discovery.kubernetes "pod" {
+          role = "pod"
+        
+          selectors {
+              role  = "pod"
+              field = "spec.nodeName=" + coalesce(sys.env("HOSTNAME"), constants.hostname)
+              label = "logs.collect=true"
+          }
+        }
+        
+        // Преобразуем Kubernetes metadata в Loki labels.
+        discovery.relabel "pod_logs" {
+          targets = discovery.kubernetes.pod.targets
+        
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+        
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+        
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+        
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+            target_label  = "app"
+          }
+        
+          rule {
+            source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_instance"]
+            target_label  = "instance"
+          }
+        }
+        
+        // Читаем stdout/stderr контейнеров через Kubernetes API.
+        loki.source.kubernetes "pod_logs" {
+          targets    = discovery.relabel.pod_logs.output
+          forward_to = [loki.process.pod_logs.receiver]
+        }
+        
+        // Добавляем статическую метку кластера.
+        loki.process "pod_logs" {
+          stage.static_labels {
+            values = {
+              cluster = "minikube",
+            }
+          }
+        
+          forward_to = [loki.write.local.receiver]
+        }
+        
+        // Отправляем обработанные логи в Loki Gateway.
+        loki.write "local" {
+          endpoint {
+            url = "http://{{ .Release.Name }}-loki-gateway/loki/api/v1/push"
+          }
+        }

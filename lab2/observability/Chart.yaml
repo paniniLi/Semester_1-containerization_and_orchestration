@@ -10,3 +10,13 @@ dependencies:
     version: "12.8.0"
     repository: https://grafana-community.github.io/helm-charts
     condition: grafana.enabled
+
+  - name: loki
+    version: "18.13.4"
+    repository: https://grafana-community.github.io/helm-charts
+    condition: loki.enabled
+
+  - name: alloy
+    version: "1.12.1"
+    repository: https://grafana.github.io/helm-charts
+    condition: alloy.enabled

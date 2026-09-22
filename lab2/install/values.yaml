@@ -3,6 +3,9 @@ image:
   tag: "1.0"
   pullPolicy: IfNotPresent
 
+logs:
+  collect: true
+
 service:
   type: NodePort
   port: 8080 # порт внутри контейнера
