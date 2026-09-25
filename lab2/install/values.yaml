@@ -10,3 +10,7 @@ service:
   type: NodePort
   port: 8080 # порт внутри контейнера
   nodePort: 30080 # порт сервиса, куда необходимо слать запросы к приложению
+
+tracing:
+  enabled: true
+  otlpEndpoint: http://monitoring-jaeger.monitoring.svc.cluster.local:4318

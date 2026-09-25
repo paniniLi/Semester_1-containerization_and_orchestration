@@ -16,7 +16,7 @@
 - RED-метрики через Micrometer;
 - отдельный счётчик ошибок `app_errors_total`;
 - structured JSON logs;
-- `trace_id` и `spanId` для корреляции логов и трейсов;
+- `traceId` и `spanId` для корреляции логов и трейсов;
 - OpenTelemetry tracing;
 - Dockerfile для сборки и запуска сервиса в контейнере.
 
@@ -199,7 +199,7 @@ pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration
 {"@timestamp":"2026-09-22T16:05:49.907911058Z","@version":"1","message":"Initializing Spring DispatcherServlet 'dispatcherServlet'","logger_name":"org.apache.catalina.core.ContainerBase.[Tomcat].[localhost].[/]","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000}
 {"@timestamp":"2026-09-22T16:05:49.914128329Z","@version":"1","message":"Initializing Servlet 'dispatcherServlet'","logger_name":"org.springframework.web.servlet.DispatcherServlet","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
 {"@timestamp":"2026-09-22T16:05:49.915824161Z","@version":"1","message":"Completed initialization in 1 ms","logger_name":"org.springframework.web.servlet.DispatcherServlet","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"tags":["COMMONS-LOGGING"]}
-{"@timestamp":"2026-09-22T16:05:49.982331051Z","@version":"1","message":"Health request","logger_name":"org.panini.controllers.SystemController","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"traceId":"6e7e5fd7dfb34ae4fd9ad9b6f5c0850c","spanId":"13cfbafbfdbb7995","trace_id":"6e7e5fd7dfb34ae4fd9ad9b6f5c0850c","endpoint":"/health"}
+{"@timestamp":"2026-09-22T16:05:49.982331051Z","@version":"1","message":"Health request","logger_name":"org.panini.controllers.SystemController","thread_name":"http-nio-0.0.0.0-8080-exec-1","level":"INFO","level_value":20000,"traceId":"6e7e5fd7dfb34ae4fd9ad9b6f5c0850c","spanId":"13cfbafbfdbb7995","endpoint":"/health"}
 ```
 </details>
 
@@ -369,5 +369,179 @@ Internal server error
 </details>
 
 ## Часть 3 - Трейсы (OpenTelemetry + Jaeger)
+Подключим зависимость `spring-boot-starter-opentelemetry` для настройки работы с Jaeger. В endpoint-е `GET /slow` обернем медленную часть запроса в отдельный span:
+```java
+ScopedSpan slowSpan = tracer.startScopedSpan("slow-op");
+
+try {
+    log.atInfo()
+            .addKeyValue("endpoint", "/slow")
+            .addKeyValue("delay_seconds", delaySeconds)
+            .log("Slow operation started");
+
+    Thread.sleep(delaySeconds * 1000L);
+} catch (InterruptedException exception) {
+    slowSpan.error(exception);
+    Thread.currentThread().interrupt();
+    throw exception;
+} finally {
+    slowSpan.end();
+}
+```
+В endpoint-е `GET /fail` принудительно переведем span в ошибку:
+```java
+Span currentSpan = tracer.currentSpan();
+if (currentSpan != null) currentSpan.error(failure);
+```
+Дополнительно в лог не выводим идентификатор traceId, поскольку его проставляет `Spring boot`.
+
+Пересоберем образ приложения и обновим релиз в кластере:
+- `docker build --file ./lab2/Dockerfile --tag lab2-api:1.1 ./lab2` - сборка образа
+- `minikube image load lab2-api:1.1` - импорт образа в `minikube`
+- `helm upgrade --install api ./lab2/install --namespace lab2 --create-namespace --set-string image.tag=1.1 --wait --timeout 5m` - обновление релиза
+
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ docker build \
+  --file ./lab2/Dockerfile \
+  --tag lab2-api:1.1 \
+  ./lab2
+[+] Building 9.8s (16/16) FINISHED                                                                                       docker:default
+ => [internal] load build definition from Dockerfile                                                                               0.1s
+ => => transferring dockerfile: 382B                                                                                               0.0s
+ => [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy                                                    1.0s
+ => [internal] load metadata for docker.io/library/maven:3.9-eclipse-temurin-21                                                    1.3s
+ => [internal] load .dockerignore                                                                                                  0.1s
+ => => transferring context: 75B                                                                                                   0.0s
+ => [build 1/6] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61  0.1s
+ => => resolve docker.io/library/maven:3.9-eclipse-temurin-21@sha256:c2a2c58516d160f43b50f12baa427ca86989e0bc942609e04aff61da5d9a  0.1s
+ => [stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f755137  0.1s
+ => => resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:61d6c7b34d36aee3f45d043101259f97f3c6d428dc2a6f75513789983c5e  0.1s
+ => [internal] load build context                                                                                                  0.1s
+ => => transferring context: 6.62kB                                                                                                0.0s
+ => CACHED [build 2/6] WORKDIR /app                                                                                                0.0s
+ => CACHED [build 3/6] COPY pom.xml .                                                                                              0.0s
+ => CACHED [build 4/6] RUN mvn dependency:go-offline                                                                               0.0s
+ => [build 5/6] COPY src ./src                                                                                                     0.1s
+ => [build 6/6] RUN mvn clean package                                                                                              5.4s
+ => CACHED [stage-1 2/4] WORKDIR /app                                                                                              0.0s 
+ => CACHED [stage-1 3/4] RUN useradd -r -u 10001 appuser                                                                           0.0s 
+ => [stage-1 4/4] COPY --from=build /app/target/lab2-1.0.0.jar app.jar                                                             0.3s 
+ => exporting to image                                                                                                             1.9s 
+ => => exporting layers                                                                                                            1.5s 
+ => => exporting manifest sha256:a12ed48a45ae788e30e722ed828a325dee460469074b2b68c3151be7923f4e49                                  0.0s
+ => => exporting config sha256:272814c4f87f80dc91de03688d9eb5941d681c43917e68323e72d48b68ba70ff                                    0.0s
+ => => exporting attestation manifest sha256:163d2f0ed3e3d7b73ae1eed34ef8d3b81d42f6ec017197a02e2752b68537a9af                      0.1s
+ => => exporting manifest list sha256:3784ad2275903086ff5909aea6e8d2559cd33ff09f4f61a15559445ef4053117                             0.0s
+ => => naming to docker.io/library/lab2-api:1.1                                                                                    0.0s
+ => => unpacking to docker.io/library/lab2-api:1.1                                                                                 0.2s
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ minikube image load lab2-api:1.1
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ 
+helm upgrade --install api ./lab2/install \
+  --namespace lab2 \
+  --create-namespace \
+  --set-string image.tag=1.1 \
+  --wait \
+  --timeout 5m
+Release "api" has been upgraded. Happy Helming!
+NAME: api
+LAST DEPLOYED: Fri Sep 25 14:07:08 2026
+NAMESPACE: lab2
+STATUS: deployed
+REVISION: 5
+TEST SUITE: None
+```
+</details>
+
+В параметрах развертывания приложения укажем url, куда будет отправлять запросы OTLP-exporter сервис: `tracing.otlpEndpoint=http://<release>-jaeger.<namespace>.svc.cluster.local:4318`. В случае переименования `namespace` или `release`, в котором разворачивается `observability` стек, необходимо продублировать изменения в параметр `tracing.otlpEndpoint`.
+
+В `monitoring` chart-е добавим новую зависимость `Jaeger`, установка данной зависимости будет определяться параметром `jaeger.enabled`, задаваемым в [observability/values.yaml](observability/values.yaml). Также создадим отдельный NodePort Service для доступа к UI (см. [observability/templates/jaeger-ui-service.yaml](observability/templates/jaeger-ui-service.yaml)), в данной конфигурации `Jaeger` будет доступен на порту `30086`. 
+
+Обновим `Helm`-релиз observability стека:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$  helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
+"jaegertracing" has been added to your repositories
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$ helm repo update jaegertracing
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "jaegertracing" chart repository
+Update Complete. ⎈Happy Helming!⎈
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration/lab2$  helm dependency update ./observability
+Hang tight while we grab the latest from your chart repositories...
+...Successfully got an update from the "jaegertracing" chart repository
+...Successfully got an update from the "grafana-community" chart repository
+...Successfully got an update from the "grafana" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 4 charts
+Downloading grafana from repo https://grafana-community.github.io/helm-charts
+Downloading loki from repo https://grafana-community.github.io/helm-charts
+Downloading alloy from repo https://grafana.github.io/helm-charts
+Downloading jaeger from repo https://jaegertracing.github.io/helm-charts
+Deleting outdated charts
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm upgrade --install monitoring ./lab2/observability \
+  --namespace monitoring \
+  --create-namespace \
+  --values ./lab2/observability/grafana-secret.values.yaml \
+  --wait \
+  --timeout 10m
+Release "monitoring" has been upgraded. Happy Helming!
+NAME: monitoring
+LAST DEPLOYED: Fri Sep 25 14:05:53 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 8
+```
+</details>
+
+Получим адрес `Grafana` и `Jaeger`:
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ echo "http://$(minikube ip):30000"
+http://192.168.49.2:30000
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ echo "http://$(minikube ip):30086"
+http://192.168.49.2:30086
+```
+
+Откроем `Grafana` и `Jaeger`, вызовем методы `GET /slow`, `GET /fail` и найдем информацию о результатах выполнения запросов в обоих приложениях:
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30080/slow"
+Response delayed by 2 seconds
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30080/fail"
+Internal server error
+```
+Найдем в `Grafana` логи, соответствующие вызову `GET /slow` и `GET /fail` с помощью фильтра `{namespace="lab2", app="lab2-api"} | json | message=~".*(Slow operation started|Intentional failure).*"`:
+<details>
+<summary>Результат</summary>
+
+![images/part3_grafana.png](images/part3_grafana.png)
+</details>
+
+Получаем соответствие для вызова `GET /slow`  `traceId = e2dbf4e6fb1ee778dd3694ef5e6132a8`, для вызова `GET /fail` - `traceId = 3b40aabefc2c3f0de90f0c99b2286afe`. Найдем соответствующие вызовы и их детализацию в `Jaeger` (поиск реализован по traceId в верхней правой части интерфейса):
+<details>
+<summary>Результат</summary>
+
+![images/part3_jaegerSlow.png](images/part3_jaegerSlow.png)
+
+![images/part3_jaegerFail.png](images/part3_jaegerFail.png)
+</details>
+
+Видим, что все время выполнения запроса `GET /slow` потратилось на span `slow-op`, а span вызова `GET /fail` имеет статус `ERROR` и содержит подробную информацию о возникшем исключении.
+
+Также можем найти в `Jaeger` сводную информацию по всем вызовам `GET /slow` и `GET /fail`:
+<details>
+<summary>Результат</summary>
+
+![images/part6_jaegerSlowSearch.png](images/part6_jaegerSlowSearch.png)
+
+![images/part6_jaegerFailSearch.png](images/part6_jaegerFailSearch.png)
+</details>
+
+
 
 ## Часть 4 - Алерты (Alertmanager + Karma)

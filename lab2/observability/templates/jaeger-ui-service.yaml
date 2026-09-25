@@ -1,0 +1,22 @@
+{{- if and .Values.jaeger.enabled .Values.jaegerUi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-jaeger-ui
+  labels:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: all-in-one
+spec:
+  type: {{ .Values.jaegerUi.service.type }}
+  selector:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: all-in-one
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ .Values.jaegerUi.service.port }}
+      targetPort: 16686
+      nodePort: {{ .Values.jaegerUi.service.nodePort }}
+{{- end }}

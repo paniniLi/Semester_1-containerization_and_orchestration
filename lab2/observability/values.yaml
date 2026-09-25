@@ -166,3 +166,14 @@ alloy:
             url = "http://{{ .Release.Name }}-loki-gateway/loki/api/v1/push"
           }
         }
+
+## Настройки Jaeger
+jaeger:
+  enabled: true # устанавливаем Jaeger
+
+jaegerUi:
+  enabled: true
+  service:
+    type: NodePort
+    port: 16686
+    nodePort: 30086 # порт для доступа к Jaeger интерфейсу

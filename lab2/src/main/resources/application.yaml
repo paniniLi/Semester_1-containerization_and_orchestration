@@ -27,7 +27,7 @@ management:
 
   tracing:
     sampling:
-      probability: 1.0
+      probability: 1.0 # сохраняется 100% трассировков
 
   otlp:
     metrics:

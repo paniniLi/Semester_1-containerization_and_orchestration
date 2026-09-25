@@ -2,6 +2,7 @@ package org.panini.controllers;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.ScopedSpan;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +34,6 @@ public class SystemController {
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         log.atInfo()
-                .addKeyValue("trace_id", currentTraceId())
                 .addKeyValue("endpoint", "/health")
                 .log("Health request");
 
@@ -44,30 +44,40 @@ public class SystemController {
     public ResponseEntity<String> fail() {
         errorCounter.increment();
 
+        IllegalStateException failure = new IllegalStateException("Intentional failure");
+
+        Span currentSpan = tracer.currentSpan();
+        if (currentSpan != null) currentSpan.error(failure);
+
         log.atError()
-                .addKeyValue("trace_id", currentTraceId())
                 .addKeyValue("endpoint", "/fail")
                 .log("Intentional failure");
 
-        return ResponseEntity.internalServerError()
-                .body("Internal server error");
+        return ResponseEntity.internalServerError().body("Internal server error");
     }
 
     @GetMapping("/slow")
     public ResponseEntity<String> slow() throws InterruptedException {
         int delaySeconds = ThreadLocalRandom.current().nextInt(1, 4);
 
-        log.atInfo()
-                .addKeyValue("trace_id", currentTraceId())
-                .addKeyValue("endpoint", "/slow")
-                .addKeyValue("delay_seconds", delaySeconds)
-                .log("Slow request started");
+        ScopedSpan slowSpan = tracer.startScopedSpan("slow-op");
 
-        Thread.sleep(delaySeconds * 1000L);
+        try {
+            log.atInfo()
+                    .addKeyValue("endpoint", "/slow")
+                    .addKeyValue("delay_seconds", delaySeconds)
+                    .log("Slow operation started");
 
-        return ResponseEntity.ok(
-                "Response delayed by " + delaySeconds + " seconds"
-        );
+            Thread.sleep(delaySeconds * 1000L);
+        } catch (InterruptedException exception) {
+            slowSpan.error(exception);
+            Thread.currentThread().interrupt();
+            throw exception;
+        } finally {
+            slowSpan.end();
+        }
+
+        return ResponseEntity.ok("Response delayed by " + delaySeconds + " seconds");
     }
 
     @GetMapping("/load")
@@ -75,7 +85,6 @@ public class SystemController {
         int requests = 20;
 
         log.atInfo()
-                .addKeyValue("trace_id", currentTraceId())
                 .addKeyValue("endpoint", "/load")
                 .addKeyValue("generated_requests", requests)
                 .log("Generating load");
@@ -95,15 +104,5 @@ public class SystemController {
         return ResponseEntity.ok(
                 "Generated " + requests + " requests"
         );
-    }
-
-    private String currentTraceId() {
-        Span span = tracer.currentSpan();
-
-        if (span == null) {
-            return "none";
-        }
-
-        return span.context().traceId();
     }
 }

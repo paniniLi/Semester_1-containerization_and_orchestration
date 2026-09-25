@@ -22,6 +22,16 @@ spec:
         - name: api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+        # перенаправляем OTPL-exporter сервиса приложения
+          {{- if .Values.tracing.enabled }}
+          env:
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.otlpEndpoint | quote }}
+          {{- end }}
+
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
