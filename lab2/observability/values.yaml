@@ -211,7 +211,7 @@ prometheus:
     enabled: false
 
   kube-state-metrics:
-    enabled: false
+    enabled: true
 
   server:
     persistentVolume:

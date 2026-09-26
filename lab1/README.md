@@ -17,50 +17,25 @@
 ## Часть 1 - Запуск напрямую
 
 На первом этапе сервис запускается напрямую на хостовой системе как обычный Linux-процесс, без контейнерной изоляции и ограничений ресурсов.
-
-Проект был собран с помощью Maven:
-
-```bash
-mvn clean package -DskipTests
-```
-
-После сборки сервис был запущен командой:
-
-```bash
-./bin/startup.sh
-```
+Проект был собран с помощью Maven `mvn clean package -DskipTests`. После сборки сервис был запущен командой `./bin/startup.sh`.
 
 ### Проверка работоспособности
 
-В браузере был открыт адрес:
-
-```text
-http://127.0.0.1:8080/health
-```
-
-Сервис успешно ответил:
-
-```text
-Приложение работает
-```
+В браузере был открыт адрес `http://127.0.0.1:8080/health`. Сервис успешно ответил:
+<details>
+<summary>Результат</summary>
 
 ![Проверка эндпоинта health](images/part1-health.png)
+</details>
 
 ### Процесс на хостовой системе
 
-Процесс приложения был найден командой:
-
-```bash
-pgrep -af 'lab1-1.0.0.jar'
-```
-
-Для просмотра PID, пользователя и команды запуска использовалась команда:
-
-```bash
-ps -o pid,user,cmd -p $(pgrep -f 'lab1-1.0.0.jar' | head -n1)
-```
+Процесс приложения был найден командой `pgrep -af 'lab1-1.0.0.jar'`. Для просмотра PID, пользователя и команды запуска использовалась команда `ps -o pid,user,cmd -p $(pgrep -f 'lab1-1.0.0.jar' | head -n1)`.
+<details>
+<summary>Результат</summary>
 
 ![Процесс приложения на хосте](images/part1-process.png)
+</details>
 
 На данном этапе приложение является обычным процессом Linux. Оно видно среди остальных процессов хостовой системы, имеет обычный PID и запускается от имени пользователя хоста. Изоляция с помощью namespaces и ограничения ресурсов с помощью cgroups ещё не применяются.
 
@@ -73,18 +48,10 @@ Namespaces позволяют изолировать различные част
 PID namespace изолирует пространство идентификаторов процессов.
 
 Один и тот же процесс может иметь:
-
 - один PID с точки зрения хостовой системы;
 - другой PID внутри созданного PID namespace.
 
-Для создания отдельного PID namespace была выполнена команда:
-
-```bash
-sudo unshare --pid --fork --mount-proc bash
-```
-
-Параметры команды:
-
+Для создания отдельного PID namespace была выполнена команда `sudo unshare --pid --fork --mount-proc bash`. Параметры команды:
 - `sudo` - команда выполняется с повышенными привилегиями;
 - `unshare` - создаёт новые namespaces для запускаемого процесса;
 - `--pid` - создаёт новый PID namespace;
@@ -94,49 +61,34 @@ sudo unshare --pid --fork --mount-proc bash
 
 Без `--mount-proc` команда `ps` могла бы продолжить читать старый `/proc` хоста и показывать процессы всей системы, поэтому для корректной демонстрации PID namespace используется отдельный `/proc`.
 
-После входа в новый namespace был проверен PID текущей оболочки:
-
-```bash
-echo $$
-```
-
-Результат:
-
-```text
-1
-```
-
-Текущий `bash` внутри namespace получил PID `1`.
+После входа в новый namespace был проверен PID текущей оболочки `echo $$`, результат - `1`.  Текущий `bash` внутри namespace получил PID `1`.
 
 PID 1 является первым процессом в данном PID namespace. Для процессов внутри этого namespace он играет ту же роль, которую init-процесс играет в обычной Linux-системе.
 
-Затем был просмотрен список доступных процессов:
-
-```bash
-ps -ef
-```
-
-Результат:
+Затем был просмотрен список доступных процессов `ps -ef`
+<details>
+<summary>Результат</summary>
 
 ```text
 UID    PID    PPID    CMD
 root     1       0    bash
 root     8       1    ps -ef
 ```
+</details>
 
 Внутри namespace видны только процессы, принадлежащие этому PID namespace. Процессы основной Ubuntu в данном списке отсутствуют.
+<details>
+<summary>Результат</summary>
 
 ![Процессы внутри PID namespace](images/part2-pid-namespace.png)
+</details>
 
-Для сравнения тот же процесс был найден снаружи namespace, в обычном терминале хостовой системы:
-
-```bash
-ps -o pid,ppid,user,cmd -p 12975
-```
-
-В данном запуске Bash, который внутри namespace имел PID `1`, на хосте имел PID `12975`.
+Для сравнения тот же процесс был найден снаружи namespace, в обычном терминале хостовой системы `ps -o pid,ppid,user,cmd -p 12975`. В данном запуске Bash, который внутри namespace имел PID `1`, на хосте имел PID `12975`.
+<details>
+<summary>Результат</summary>
 
 ![PID процесса на хосте](images/part2-pid-host.png)
+</details>
 
 Таким образом, PID процесса не является абсолютным значением для всей системы. Его значение зависит от PID namespace, из которого процесс наблюдается.
 
@@ -146,69 +98,23 @@ ps -o pid,ppid,user,cmd -p 12975
 
 UTS namespace изолирует hostname и domain name системы.
 
-Сначала был проверен hostname хостовой системы:
+Сначала был проверен hostname хостовой системы командой `hostname`, результат - `itmo-containers`
 
-```bash
-hostname
-```
+После этого был создан отдельный UTS namespace `sudo unshare --uts bash`. Сразу после создания namespace hostname внутри него совпадал с hostname хоста (с помощью команды `hostname` получаем результат `itmo-containers`)
 
-Результат:
-
-```text
-itmo-containers
-```
-
-После этого был создан отдельный UTS namespace:
-
-```bash
-sudo unshare --uts bash
-```
-
-Сразу после создания namespace hostname внутри него совпадал с hostname хоста:
-
-```bash
-hostname
-```
-
-Результат:
-
-```text
-itmo-containers
-```
-
-Затем hostname был изменён только внутри созданного namespace:
-
-```bash
-hostname lab1-container
-```
-
-После изменения:
-
-```bash
-hostname
-```
-
-Результат:
-
-```text
-lab1-container
-```
+Затем hostname был изменён только внутри созданного namespace: `hostname lab1-container`. После изменения результат команды `hostname` выводит `lab2-container`.
+<details>
+<summary>Результат</summary>
 
 ![Hostname внутри UTS namespace](images/part2-uts-namespace.png)
+</details>
 
-В отдельном терминале на хостовой системе hostname остался прежним:
-
-```bash
-hostname
-```
-
-Результат:
-
-```text
-itmo-containers
-```
+В отдельном терминале на хостовой системе hostname остался прежним: результат команды `hostname` - `itmo-containers`
+<details>
+<summary>Результат</summary>
 
 ![Hostname хоста](images/part2-uts-host.png)
+</details>
 
 Таким образом, изменение hostname внутри UTS namespace не влияет на hostname основной системы. Процессы в разных UTS namespaces могут видеть разные имена хоста, хотя работают на одном Linux-ядре.
 
@@ -223,8 +129,11 @@ ip addr
 ```
 
 На хосте присутствовал интерфейс `enp0s3` с IP-адресом `10.0.2.15`.
+<details>
+<summary>Результат</summary>
 
 ![Сеть хостовой системы](images/part2-net-host.png)
+</details>
 
 После этого был создан отдельный network namespace:
 
@@ -259,8 +168,11 @@ ping -c 1 8.8.8.8
 ```text
 Сеть недоступна
 ```
+<details>
+<summary>Результат</summary>
 
 ![Сеть внутри network namespace](images/part2-net-namespace.png)
+</details>
 
 Таким образом, новый network namespace получил отдельный сетевой стек и не унаследовал сетевой интерфейс и маршруты хостовой системы.
 
@@ -285,8 +197,11 @@ uid=1000(anna) gid=1000(anna) ...
 ```
 
 Таким образом, на хостовой системе процесс выполняется от имени обычного пользователя `anna` с UID `1000`.
+<details>
+<summary>Результат</summary>
 
 ![Пользователь на хостовой системе](images/part2-user-host.png)
+</details>
 
 После этого был создан новый user namespace:
 
@@ -349,8 +264,11 @@ cat: /etc/shadow: Отказано в доступе
 ```
 
 Несмотря на то, что внутри namespace пользователь отображается как `root`, он не получает полномочия настоящего root-пользователя хостовой системы.
+<details>
+<summary>Результат</summary>
 
 ![Root внутри user namespace](images/part2-user-namespace.png)
+</details>
 
 Таким образом, user namespace позволяет изолировать пространство UID и GID. Процесс может обладать UID `0` внутри namespace, при этом снаружи оставаться обычным непривилегированным пользователем.
 
@@ -405,8 +323,11 @@ ls -la /tmp/lab1-mount
 ```
 
 показала файл `inside.txt`.
+<details>
+<summary>Результат</summary>
 
 ![Монтирование внутри mount namespace](images/part2-mount-namespace.png)
+</details>
 
 После этого на хостовой системе была выполнена проверка:
 
@@ -423,8 +344,11 @@ ls -la /tmp/lab1-mount
 ```
 
 На хосте каталог существует, однако файл `inside.txt` отсутствует.
+<details>
+<summary>Результат</summary>
 
 ![Mount namespace с точки зрения хоста](images/part2-mount-host.png)
+</details>
 
 Сам каталог `/tmp/lab1-mount` виден на хосте, поскольку создание директории является обычной операцией с общей файловой системой. Однако монтирование `tmpfs` поверх этой директории существует только внутри отдельного mount namespace.
 
@@ -459,8 +383,11 @@ ipcs -m
 ```
 
 Внутри namespace отображался созданный сегмент с `shmid = 0` и размером `1024` байта.
+<details>
+<summary>Результат</summary>
 
 ![Shared memory внутри IPC namespace](images/part2-ipc-namespace.png)
+</details>
 
 После этого на хостовой системе была выполнена та же команда:
 
@@ -469,8 +396,11 @@ ipcs -m
 ```
 
 На хосте присутствовали собственные IPC-объекты различных процессов, однако сегмент `shmid = 0` размером 1024 байта, созданный внутри IPC namespace, отсутствовал.
+<details>
+<summary>Результат</summary>
 
 ![IPC-объекты на хостовой системе](images/part2-ipc-host.png)
+</details>
 
 Таким образом, IPC namespace предоставляет процессам отдельное пространство IPC-объектов. Объекты shared memory, созданные внутри namespace, не становятся видимыми процессам хостовой системы.
 
@@ -513,8 +443,11 @@ cat /proc/self/uid_map
 - сетевой интерфейс хоста `enp0s3` отсутствует, доступен только отдельный loopback-интерфейс;
 - пользователь внутри namespace отображается как `root` с UID `0`;
 - UID `0` внутри namespace отображается в UID `1000` пользователя `anna` на хостовой системе.
+<details>
+<summary>Результат</summary>
 
 ![Проверка объединённых namespaces](images/part2-all-namespaces-inside.png)
+</details>
 
 После настройки окружения текущая оболочка была заменена процессом Java-сервиса:
 
@@ -575,8 +508,11 @@ sudo nsenter -t "$PID" -n curl http://127.0.0.1:8080/health
 ```text
 Приложение работает
 ```
+<details>
+<summary>Результат</summary>
 
 ![Сервис внутри namespaces с точки зрения хоста](images/part2-service-host-view.png)
+</details>
 
 Таким образом, один процесс приложения одновременно работает в отдельных PID, mount, network, UTS, IPC и user namespaces. Внутри окружения сервис видит себя как PID `1` и root-пользователя, имеет собственный hostname и изолированную сеть, тогда как на хостовой системе тот же процесс остаётся обычным непривилегированным процессом пользователя `anna`.
 
@@ -714,8 +650,11 @@ oom_kill 1
 ```
 
 Значение `oom = 1` означает, что cgroup столкнулась с нехваткой доступной памяти, а `oom_kill = 1` подтверждает, что процесс был завершён OOM killer ядра Linux вследствие превышения ограничения `memory.max`.
+<details>
+<summary>Результат</summary>
 
 ![OOM при превышении ограничения памяти](images/part3-memory-oom.png)
+</details>
 
 Таким образом, cgroups v2 позволяют задать жёсткий предел потребления оперативной памяти процессом. При попытке превысить установленный `memory.max` ядро Linux завершает процесс с помощью OOM killer.
 
@@ -819,8 +758,11 @@ throttled_usec: 18685281 → 32090725
 ```
 
 Это подтверждает, что процесс пытался использовать больше CPU, чем разрешено установленным значением `cpu.max`, после чего ядро Linux временно приостанавливало выполнение процессов cgroup.
+<details>
+<summary>Результат</summary>
 
 ![CPU throttling при превышении квоты](images/part3-cpu-throttling.png)
+</details>
 
 Таким образом, cgroups v2 позволяют ограничить доступное процессорное время. При превышении установленной квоты процесс не завершается, а его выполнение периодически приостанавливается механизмом CPU throttling.
 
@@ -906,8 +848,11 @@ max 1399516
 ```text
 Tasks: 20 (limit: 20)
 ```
+<details>
+<summary>Результат</summary>
 
 ![Ограничение количества процессов](images/part3-pids-limit.png)
+</details>
 
 Таким образом, контроллер `pids` в cgroups v2 позволяет ограничить количество процессов и потоков внутри группы. После достижения значения `pids.max` дальнейшие попытки создания процессов блокируются ядром.
 
@@ -1183,7 +1128,7 @@ Docker использует те же фундаментальные механ�
 
 </details>
 
-2. Следующим соберем multi-stage` образ: ``sudo docker build -f multistage.dockerfile -t lab1-multistage-image:1.0 .`, можно заметить, что при сборке `multi-stage` образа переиспользовался закэшированный шаг `WORKDIR /app`, остальные слои, так как располагаются выше и отличаются от одноэтапной сборки, берутся не из кэша:
+2. Следующим соберем multi-stageобраз: `sudo docker build -f multistage.dockerfile -t lab1-multistage-image:1.0 .`, можно заметить, что при сборке `multi-stage` образа переиспользовался закэшированный шаг `WORKDIR /app`, остальные слои, так как располагаются выше и отличаются от одноэтапной сборки, берутся не из кэша:
 <details>
 <summary>Результат</summary>
 
@@ -1309,3 +1254,202 @@ root       39023   38998  2 22:01 ?        00:02:25 runsc-sandbox --root=/var/ru
 Видим, что первый процесс, соответствующий контейнеру без gvisor изоляции, относится к java-приложению, в то время как процесс контейнера `lab1-container-gvisor` относится к запущенному Sentry.
 
 Таким образом, в случае стандартного запуска Docker-контейнера, получаем изоляцию с помощью namespace, cgroups, capabilities и seccomp, **но сами системные вызовы выполняются на общем ядре хоста (предел контейнерной изоляции)**. В случае запуска контейнера под gvisor ядром выступает сам gvisor, самостоятельно обрабатывающий большую часть системных вызовов.
+
+## Часть 8 - Мониторинг
+Запустим приложение в `minikube` кластере и в отдельном namespace-е поднимем `Grafana` и `Prometheus` для настройки мониторинга приложения (подробнее про поднятие observability-стека смотри в отчете по [Лабораторной работе №2](../lab2/README.md)).
+
+Запустим приложение `api` в namespace `lab1`: 
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm upgrade --install api ./lab1/install \
+  --namespace lab1 \
+  --create-namespace \
+  --wait \
+  --timeout 5m
+Release "api" has been upgraded. Happy Helming!
+NAME: api
+LAST DEPLOYED: Fri Sep 25 18:52:40 2026
+NAMESPACE: lab1
+STATUS: deployed
+REVISION: 2
+TEST SUITE: None
+```
+Также поднимем `Grafana` и `Prometheus` в namespace `monitoring`: 
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm upgrade monitoring ./lab2/observability \
+  --namespace monitoring \
+  --wait \
+  --timeout 10m
+Release "monitoring" has been upgraded. Happy Helming!
+NAME: monitoring
+LAST DEPLOYED: Fri Sep 25 20:17:23 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 12
+```
+
+Создадим дашборд для отслеживания потребление памяти и CPU-ресурсов подом `api`.
+
+### Метрики анализа потребления CPU-ресурсов
+При превышении Pod-ом допустимых лимитов используемого процессорного времени возникает явление `Throttling`, при котором контейнер продолжает свою работу, но с задержками. Для отслеживания подобной ситуации можно использовать следующие метрики:
+1. `CPU Throttled Periods` - процент throttled-периодов за последние N минут 
+2. `CPU Throttled Time Rate` - скорость роста throttled-времени за последние N минут
+3. `CPU Usage` - потребление CPU
+
+Для вычисления первой метрики воспользуемся следующей формулой:
+<details>
+<summary>Формула CPU Throttling Periods метрики</summary>
+
+```text
+100 *
+sum by (pod) (
+  rate(container_cpu_cfs_throttled_periods_total{
+    namespace="lab1",
+    container="api"
+  }[5m])
+)
+/
+sum by (pod) (
+  rate(container_cpu_cfs_periods_total{
+    namespace="lab1",
+    container="api"
+  }[5m])
+)
+```
+</details>
+
+`Container_cpu_cfs_throttled_periods_total` - это общее количество CPU-периодов, в которых процесс прерывался. `Container_cpu_cfs_periods_total` - общее количество CPU-периодов, прошедшее за все время работы приложения. Данная метрика показывает, какой процент CPU-периодов за последние 5 минут был прерван в следствии превышения процессом лимита на CPU-ресурсы.
+
+Для вычисления второй метрики воспользуемся следующей формулой:
+<details>
+<summary>Формула CPU Throttled Time Rate метрики</summary>
+
+```text
+sum by (pod) (
+  rate(container_cpu_cfs_throttled_seconds_total{
+    namespace="lab1",
+    container="api"
+  }[5m])
+)
+```
+</details>
+
+`Container_cpu_cfs_throttled_seconds_total` возвращает общее количество времени, которое процесс провел в состоянии throttled. Таким образом, представленная метрика отображает среднюю скорость роста времени, в течение которого процесс провел в состоянии throttled, за последние 5 минут.
+
+Комбинация метрик 1 и 2 позволит отлавливать следующие ситуации:
+- `throttling` возникает часто (`CPU Throttled Periods` высокий), но время, в течение которого ограничивались CPU-ресурсы процесса, небольшое (`CPU Throttled Time Rate` низкий) - возможно требуется увеличить лимиты для приложения
+- `throttling` возникает редко (`CPU Throttled Periods` низкий), но время, в течение которого ограничивались CPU-ресурсы процесса, длительное (`CPU Throttled Time Rate` высокий) - возможно требуется детально проанализировать кейс и оптимизировать код в местах неэффективного использования ресурсов
+
+Описанные ситуации не относятся к критичным, поэтому требуется использовать обе метрики для формирования информативного алерта. К примеру, если одновременно `CPU Throttled Periods` и `CPU Throttled Time Rate` высокие, то для всех пользователей наблюдается резкий спад скорости работы приложения.
+
+Также необходимо создать метрику `CPU Usage`, которая будет отображать среднее количество ядер, используемых для работы приложения, за последние N минут:
+<details>
+<summary>Формула CPU Usage метрики</summary>
+
+```text
+sum by (pod) (
+  rate(container_cpu_usage_seconds_total{
+    namespace="lab1",
+    container="api"
+  }[2m])
+)
+```
+</details>
+
+Данная метрика необходима для корректной настройки requests и limits пода.
+
+### Метрики анализа потребления памяти
+В работе контейнеров важно отслеживать потребление памяти, так как при превышении установленного лимита, контейнер перезапускается. При регулярных утечках памяти, либо низких лимитах по памяти, приложение будет перезапускаться часто, что также повлечет за собой проблемы со скоростью работы приложения на стороне пользователей.
+
+Для анализа потребления памяти создадим 2 метрики, которые отслеживают факты возникновения событий OOMKilled и сколько памяти потребляет данный контейнер:
+- `Memory usage` - сколько памяти потребляет данный контейнер
+- `OOMKilled Events` - признак перезагрузки контейнера по причине нехватки памяти за последние N минут
+
+Для расчета признака перезагрузки контейнера `OOMKilled events` по причине OOMKilled воспользуемся метриками контейнера `kube_pod_container_status_restarts_total`, которая фиксирует количество перезапуском контейнера, `kube_pod_container_status_last_terminated_reason`, которая фиксирует последнюю причину перезагрузки контейнера. Таким образом следующая формула определяет, был ли перезагружен контейнер за последние 2 минуты из-за превышения лимита по памяти:
+<details>
+<summary>Формула OOMKilled Events метрики</summary>
+
+```text
+(
+  (
+    increase(
+      kube_pod_container_status_restarts_total{
+        namespace="lab1",
+        container="api"
+      }[2m]
+    ) > bool 0
+  )
+  and on(namespace, pod, container)
+  (
+    kube_pod_container_status_last_terminated_reason{
+      namespace="lab1",
+      container="api",
+      reason="OOMKilled"
+    } == 1
+  )
+)
+or on(namespace, pod, container)
+(
+  0 * kube_pod_container_status_restarts_total{
+    namespace="lab1",
+    container="api"
+  }
+)
+```
+</details>
+
+Метрика `Memory Usage` определяет сколько памяти потребляет контейнер в данный момент:
+<details>
+<summary>Формула Memory usage метрики</summary>
+
+```text
+sum by (pod) (
+  container_memory_working_set_bytes{
+    namespace="lab1",
+    container="api"
+  }
+  and on(namespace, pod, container, id)
+  topk by(namespace, pod, container) (
+    1,
+    container_start_time_seconds{
+      namespace="lab1",
+      container="api"
+    }
+  )
+)
+```
+</details>
+
+### Эксперимент
+Запустим `GET /burn` и посмотрим как меняются метрики потребления CPU-ресурсов с течением времени:
+<details>
+<summary>Результат</summary>
+
+![images/part8_burn.png](images/part8_burn.png)
+</details>
+
+Сгенерируем OOMKilled event засчет вызова `GET /eat`
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30081/eat?mb=100"
+Выделено 100 МБ
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30081/eat?mb=100"
+Выделено 100 МБ
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30081/eat?mb=100"
+Выделено 100 МБ
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30081/eat?mb=100"
+curl: (52) Empty reply from server
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl "http://$(minikube ip):30081/health"
+Приложение работает
+```
+
+![images/part8_eat.png](images/part8_eat.png)
+</details>
+
+Полный дашборд выглядит следующим образом:
+<details>
+<summary>Результат</summary>
+
+![images/prat8_dashboard.png](images/prat8_dashboard.png)
+</details>
