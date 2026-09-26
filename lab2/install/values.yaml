@@ -1,7 +1,18 @@
+app:
+  name: lab2-api
+
 image:
   repository: lab2-api
   tag: "1.0"
   pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
 logs:
   collect: true

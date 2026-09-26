@@ -1,0 +1,27 @@
+app:
+  name: lab1-api
+
+image:
+  repository: lab1-multistage-image
+  tag: "1.2"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+logs:
+  collect: true
+
+service:
+  type: NodePort
+  port: 8080 # порт внутри контейнера
+  nodePort: 30081 # порт сервиса, куда необходимо слать запросы к приложению
+
+tracing:
+  enabled: false
+  otlpEndpoint: ""

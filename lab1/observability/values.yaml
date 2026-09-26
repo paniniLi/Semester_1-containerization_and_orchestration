@@ -25,18 +25,10 @@ grafana:
           isDefault: false
           editable: false
 
-        - name: Prometheus
-          uid: prometheus
-          type: prometheus
-          access: proxy
-          url: 'http://{{ .Release.Name }}-prometheus-server'
-          isDefault: true
-          editable: false
-
   ## Настройки для автоматического создания dashboard с выбранными метриками
   sidecar:
     dashboards:
-      enabled: false
+      enabled: true
       label: grafana_dashboard
       labelValue: "1"
       searchNamespace: null
@@ -188,31 +180,11 @@ alloy:
 
 ## Настройки Jaeger
 jaeger:
-  enabled: true # устанавливаем Jaeger
+  enabled: false # устанавливаем Jaeger
 
 jaegerUi:
-  enabled: true
+  enabled: false
   service:
     type: NodePort
     port: 16686
     nodePort: 30086 # порт для доступа к Jaeger интерфейсу
-
-## Настройки prometheus
-prometheus:
-  enabled: true
-
-  alertmanager:
-    enabled: false
-
-  prometheus-pushgateway:
-    enabled: false
-
-  prometheus-node-exporter:
-    enabled: false
-
-  kube-state-metrics:
-    enabled: false
-
-  server:
-    persistentVolume:
-      enabled: false
