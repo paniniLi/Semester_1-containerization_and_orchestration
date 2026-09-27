@@ -1,0 +1,40 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+
+project:
+  version: @project.version@
+
+spring:
+  application:
+    name: shop-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/shop}
+    username: ${DB_USER:shop}
+    password: ${DB_PASSWORD:shop}
+
+health:
+  fail: ${HEALTH_FAIL:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+      base-path: /
+      path-mapping:
+        prometheus: metrics
+
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+  tracing:
+    sampling:
+      probability: 1.0 # сохраняется 100% трассировков
+
+logging:
+  structured:
+    format:
+      console: logstash
