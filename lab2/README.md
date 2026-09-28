@@ -20,7 +20,7 @@
 - OpenTelemetry tracing;
 - Dockerfile для сборки и запуска сервиса в контейнере.
 
-Поднимем локальный Kubernetes-кластер с помощью `minikube` и установим приложение через `helm`. В запущщеном контейнере будет работать приложение из [src](src):
+Поднимем локальный Kubernetes-кластер с помощью `minikube` и установим приложение через `helm`. В запущенном контейнере будет работать приложение из [src](src):
 1. Запустим кластер: `minikube start --driver=docker --cpus=4 --memory=6144`
 <details>
 <summary>Результат</summary>
@@ -160,6 +160,61 @@ http://192.168.49.2:30000
 
 ![images/part1_grafana.png](images/part1_grafana.png)
 </details>
+
+### Настройка Prometheus и RED-дашборда
+
+Для сбора метрик приложения в observability-стек добавлен Prometheus. Endpoint `/metrics` сервиса обнаруживается Prometheus в Kubernetes с помощью аннотаций, заданных для `Service` приложения:
+
+```yaml
+prometheus.io/scrape: "true"
+prometheus.io/path: "/metrics"
+prometheus.io/port: "8080"
+```
+
+Prometheus подключен к Grafana как datasource. Для отображения основных RED-метрик создан дашборд `Lab 2 - RED Metrics`, состоящий из трёх панелей.
+
+**Request rate** отображает интенсивность пользовательских запросов:
+
+```promql
+sum(rate(http_server_requests_seconds_count{uri!="/metrics"}[5m]))
+```
+
+**Error rate** отображает долю запросов, завершившихся HTTP 5xx:
+
+```promql
+sum(rate(http_server_requests_seconds_count{status=~"5..",uri!="/metrics"}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{uri!="/metrics"}[5m]))
+```
+
+**p95 response time** отображает 95-й перцентиль времени ответа:
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(http_server_requests_seconds_bucket{uri!="/metrics"}[5m])
+  )
+)
+```
+
+Для проверки работы дашборда были вызваны endpoint'ы `/load`, `/fail` и `/slow`:
+
+- `/load` увеличивает интенсивность запросов;
+- `/fail` увеличивает долю HTTP 5xx;
+- `/slow` увеличивает p95 времени ответа.
+
+После генерации нагрузки все три графика изменились соответственно. Значение p95 при вызовах `/slow` достигало примерно 3 секунд.
+
+<details>
+
+<summary>Результат</summary>
+
+![RED dashboard](images/part1_red_dashboard.png)
+
+</details>
+
+Дашборд экспортирован в `observability/dashboards/dashboard.json`. При установке Helm-релиза файл добавляется в Kubernetes `ConfigMap`, а Grafana sidecar автоматически загружает его. Благодаря этому дашборд восстанавливается после пересоздания Pod Grafana.
 
 ## Часть 2 - Логи (Loki + Grafana)
 Подключим хранилище логов Loki и агент Grafana Alloy для обнаружения и сбора логов с Pod-ов как зависимости Helm chart `monitoring`. Схема взаимодействия компонентов следующая:
@@ -545,3 +600,151 @@ Internal server error
 
 
 ## Часть 4 - Алерты (Alertmanager + Karma)
+
+Для отслеживания критических состояний сервиса были настроены правила алертинга Prometheus и Alertmanager.
+
+Настроены три критических алерта:
+
+- `HighErrorRate` - срабатывает, если доля HTTP 5xx превышает 5% в течение 30 секунд;
+- `HighP95Latency` - срабатывает, если p95 времени ответа превышает 1 секунду в течение 30 секунд;
+- `ServiceDown` - срабатывает, если Prometheus не может получить метрики сервиса или target полностью отсутствует в течение 30 секунд.
+
+Для `HighErrorRate` используется следующее PromQL-выражение:
+
+```promql
+sum(rate(http_server_requests_seconds_count{
+  namespace="lab2",
+  service="api",
+  status=~"5..",
+  uri!="/metrics"
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+  namespace="lab2",
+  service="api",
+  uri!="/metrics"
+}[5m]))
+> 0.05
+```
+
+Для `HighP95Latency` используется вычисление 95-го перцентиля времени ответа:
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(http_server_requests_seconds_bucket{
+      namespace="lab2",
+      service="api",
+      uri!="/metrics"
+    }[5m])
+  )
+) > 1
+```
+
+Проверка недоступности сервиса выполняется следующим выражением:
+
+```promql
+(up{namespace="lab2",service="api"} == 0)
+or
+absent(up{namespace="lab2",service="api"})
+```
+
+### Alertmanager и webhook
+
+Alertmanager был развёрнут в namespace `monitoring` в составе Helm-релиза системы наблюдаемости.
+
+В качестве получателя уведомлений был настроен webhook `lab2-webhook`:
+
+```yaml
+receivers:
+  - name: lab2-webhook
+    webhook_configs:
+      - url: http://alert-webhook.monitoring.svc.cluster.local:8080/
+        send_resolved: true
+```
+
+Для приёма уведомлений в Kubernetes развёрнут отдельный сервис `alert-webhook`. Alertmanager отправляет ему HTTP POST при переходе алерта в состояние `firing`, а также после устранения проблемы со статусом `resolved`.
+
+Полученные уведомления можно просмотреть в логах:
+
+```bash
+minikube kubectl -- logs deployment/alert-webhook -n monitoring
+```
+
+В ходе проверки webhook успешно получил уведомление от Alertmanager со статусом `firing` и уровнем `severity=critical`. Успешная обработка запроса подтверждается ответом HTTP `200`.
+
+![Webhook receiver](images/part4-webhook.png)
+
+### Проверка алертов
+
+Для проверки `HighErrorRate` генерировались запросы к endpoint `/fail`. После превышения порога доли HTTP 5xx алерт перешёл сначала в состояние `pending`, затем в `firing`.
+
+Для проверки `HighP95Latency` генерировались запросы к endpoint `/slow`. После увеличения p95 времени ответа выше одной секунды алерт также перешёл в состояние `firing`.
+
+Для проверки `ServiceDown` Deployment приложения временно масштабировался до нуля реплик:
+
+```bash
+minikube kubectl -- scale deployment api -n lab2 --replicas=0
+```
+
+После исчезновения target сервиса из Prometheus алерт `ServiceDown` перешёл в состояние `firing`.
+
+В финальной проверке удалось одновременно получить состояние `firing` для всех трёх правил:
+
+```text
+HighErrorRate state = firing health = ok
+HighP95Latency state = firing health = ok
+ServiceDown state = firing health = ok
+```
+
+![Prometheus alerts](images/part4-prometheus-alerts.png)
+
+### Alertmanager
+
+После перехода правил в состояние `firing` алерты были переданы в Alertmanager.
+
+В интерфейсе Alertmanager одновременно отображались три активных критических алерта:
+
+- `HighErrorRate`;
+- `HighP95Latency`;
+- `ServiceDown`.
+
+Все три алерта имели уровень `severity="critical"` и были направлены получателю `lab2-webhook`.
+
+![Alertmanager active alerts](images/part4-alertmanager-alerts.png)
+
+### Karma
+
+Для визуального отображения активных алертов была развёрнута Karma, подключённая к Alertmanager.
+
+Во время финальной проверки Karma одновременно отображала три активных критических алерта:
+
+- `HighErrorRate`;
+- `HighP95Latency`;
+- `ServiceDown`.
+
+![Karma alerts](images/part4-karma-alerts.png)
+
+Таким образом, была проверена полная цепочка обработки алертов:
+
+```text
+Prometheus
+    ↓
+Alert rules
+    ↓
+Alertmanager
+    ↓
+Webhook receiver
+
+Karma отображает активные алерты из Alertmanager
+```
+
+После завершения проверки приложение было восстановлено:
+
+```bash
+minikube kubectl -- scale deployment api -n lab2 --replicas=1
+minikube kubectl -- rollout status deployment/api -n lab2 --timeout=120s
+```
+
+Все три критических сценария были успешно воспроизведены. Prometheus перевёл соответствующие правила в состояние `firing`, Alertmanager принял активные алерты и отправил уведомления настроенному webhook-получателю, а Karma отобразила текущие критические события.
