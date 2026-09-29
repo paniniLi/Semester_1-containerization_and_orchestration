@@ -216,3 +216,92 @@ prometheus:
   server:
     persistentVolume:
       enabled: false
+
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: lab1-resource-alerts
+          rules:
+            - alert: HighCpuThrottling
+              expr: |
+                (
+                  100 *
+                  sum by (pod) (
+                    rate(container_cpu_cfs_throttled_periods_total{
+                      namespace="lab1",
+                      container="api"
+                    }[5m])
+                  )
+                  /
+                  sum by (pod) (
+                    rate(container_cpu_cfs_periods_total{
+                      namespace="lab1",
+                      container="api"
+                    }[5m])
+                  )
+                  > 20
+                )
+                and on(pod)
+                (
+                  sum by (pod) (
+                    rate(container_cpu_cfs_throttled_seconds_total{
+                      namespace="lab1",
+                      container="api"
+                    }[5m])
+                  )
+                  > 0.1
+                )
+              for: 30s
+              labels:
+                severity: critical
+              annotations:
+                summary: "High CPU throttling"
+                description: "CPU throttling periods and throttled time are both above the configured thresholds."
+
+            - alert: HighMemoryUsage
+              expr: |
+                (
+                  sum by (namespace, pod, container) (
+                    container_memory_working_set_bytes{
+                      namespace="lab1",
+                      container="api"
+                    }
+                  )
+                  /
+                  sum by (namespace, pod, container) (
+                    kube_pod_container_resource_limits{
+                      namespace="lab1",
+                      container="api",
+                      resource="memory",
+                      unit="byte"
+                    }
+                  )
+                ) > 0.8
+              for: 30s
+              labels:
+                severity: critical
+              annotations:
+                summary: "High memory usage"
+                description: "API container is using more than 80% of its memory limit."
+
+            - alert: OOMKilled
+              expr: |
+                (
+                  kube_pod_container_status_restarts_total{
+                    namespace="lab1",
+                    container="api"
+                  } > 0
+                )
+                and on(namespace, pod, container)
+                (
+                  kube_pod_container_status_last_terminated_reason{
+                    namespace="lab1",
+                    container="api",
+                    reason="OOMKilled"
+                  } == 1
+                )
+              labels:
+                severity: critical
+              annotations:
+                summary: "Container was OOMKilled"
+                description: "API container restarted because it exceeded the available memory limit."
