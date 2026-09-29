@@ -36,7 +36,7 @@ grafana:
   ## Настройки для автоматического создания dashboard с выбранными метриками
   sidecar:
     dashboards:
-      enabled: false
+      enabled: true
       label: grafana_dashboard
       labelValue: "1"
       searchNamespace: null
@@ -197,12 +197,31 @@ jaegerUi:
     port: 16686
     nodePort: 30086 # порт для доступа к Jaeger интерфейсу
 
-## Настройки prometheus
+## Настройки prometheusЫ
 prometheus:
   enabled: true
 
   alertmanager:
-    enabled: false
+    enabled: true
+
+    persistence:
+      enabled: false
+
+    config:
+      global:
+        resolve_timeout: 1m
+
+      route:
+        receiver: lab2-webhook
+        group_wait: 5s
+        group_interval: 10s
+        repeat_interval: 1h
+
+      receivers:
+        - name: lab2-webhook
+          webhook_configs:
+            - url: http://alert-webhook.monitoring.svc.cluster.local:8080/
+              send_resolved: true
 
   prometheus-pushgateway:
     enabled: false
@@ -216,3 +235,48 @@ prometheus:
   server:
     persistentVolume:
       enabled: false
+
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: lab2-critical-alerts
+          rules:
+            - alert: HighErrorRate
+              expr: |
+                sum(rate(http_server_requests_seconds_count{namespace="lab2",service="api",status=~"5..",uri!="/metrics"}[5m]))
+                /
+                sum(rate(http_server_requests_seconds_count{namespace="lab2",service="api",uri!="/metrics"}[5m]))
+                > 0.05
+              for: 30s
+              labels:
+                severity: critical
+              annotations:
+                summary: "High HTTP 5xx error rate"
+                description: "More than 5% of API requests are returning 5xx responses."
+
+            - alert: HighP95Latency
+              expr: |
+                histogram_quantile(
+                  0.95,
+                  sum by (le) (
+                    rate(http_server_requests_seconds_bucket{namespace="lab2",service="api",uri!="/metrics"}[5m])
+                  )
+                ) > 1
+              for: 30s
+              labels:
+                severity: critical
+              annotations:
+                summary: "High p95 response time"
+                description: "API p95 response time is above 1 second."
+
+            - alert: ServiceDown
+              expr: |
+                (up{namespace="lab2",service="api"} == 0)
+                or
+                absent(up{namespace="lab2",service="api"})
+              for: 30s
+              labels:
+                severity: critical
+              annotations:
+                summary: "API service is down"
+                description: "Prometheus cannot scrape the API service."
