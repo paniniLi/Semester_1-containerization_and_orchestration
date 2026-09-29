@@ -6,5 +6,26 @@ project:
   version: @project.version@
 
 spring:
+  application:
+    name: lab1-api
   main:
     allow-circular-references: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+      base-path: /
+      path-mapping:
+        prometheus: metrics
+
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+logging:
+  structured:
+    format:
+      console: logstash

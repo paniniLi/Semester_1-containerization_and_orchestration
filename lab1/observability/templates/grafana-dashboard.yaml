@@ -1,0 +1,17 @@
+{{- if and .Values.grafana.enabled .Values.grafana.sidecar.dashboards.enabled }}
+{{- $dashboard := .Files.Get "dashboards/dashboard.json" }}
+{{- if not $dashboard }}
+{{ fail "dashboards/dashboard.json is missing" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  dashboard.json: |-
+{{ $dashboard | nindent 4 }}
+{{- end }}

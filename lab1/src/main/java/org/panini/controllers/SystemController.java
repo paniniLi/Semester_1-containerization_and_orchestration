@@ -9,8 +9,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
@@ -78,18 +76,15 @@ public class SystemController {
             int exitCode = process.waitFor();
 
             if (exitCode != 0) {
-                return ResponseEntity.internalServerError()
-                        .body("Код ошибки: " + exitCode);
+                return ResponseEntity.internalServerError().body("Код ошибки: " + exitCode);
             }
 
             return ResponseEntity.ok(output);
         } catch (IOException e) {
-            return ResponseEntity.internalServerError()
-                    .body("Ошибка запуска команды: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Ошибка запуска команды: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return ResponseEntity.internalServerError()
-                    .body("Выполнение команды было прервано");
+            return ResponseEntity.internalServerError().body("Выполнение команды было прервано");
         }
     }
 }
