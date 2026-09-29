@@ -9,7 +9,7 @@ metadata:
 
 spec:
   backoffLimit: {{ .Values.migrations.backoffLimit }} # количество попыток запуска Job в случае неуспешного завершения
-  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }} # временной интервал между попытками повторных запусков Job
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }} # максимальное время выполнения Job
 
   template: # шаблон для Pod, создаваемого данной Job для запуска скрипта миграции
     metadata:

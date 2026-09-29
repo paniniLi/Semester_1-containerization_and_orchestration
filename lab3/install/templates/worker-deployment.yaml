@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
+  name: {{ .Release.Name }}-worker
   labels:
     app.kubernetes.io/name: shop-worker
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -20,12 +20,56 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
     spec:
+      initContainers: # проверяем, применены ли изменения к схеме данных; до окончания их применения не запускаем приложение
+        - name: wait-for-schema-migrations
+          image: "{{ .Values.migrations.image.repository }}:{{ .Values.migrations.image.version }}"
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          args:
+            - "-connectRetries=60"
+            - "validate"
+          env:
+            - name: FLYWAY_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: jdbc-uri
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: username
+
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: password
       containers:
         - name: worker
-          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.version }}}"
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.version }}"
           imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
           resources:
             {{ toYaml .Values.worker.resources | nindent 12 }}
+
+          ## Параметры подключения приложения к базе данных
+          env:
+            - name: DB_URL # JDBC-адрес PostgreSQL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: jdbc-uri
+
+            - name: DB_USER # пользователь базы
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: username
+
+            - name: DB_PASSWORD # пароль пользователя базы
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: password
 
           ports:
             - name: http

@@ -8,7 +8,7 @@
 - `POST /order` — создает новый заказ в `orders` с переданным `description` 
 - `GET /orders` — возвращает список всех существующих заказов: новых, обработанных и прочее
 
-В сервисе `worker` доступны следующие endpoint-в:
+В сервисе `worker` доступны следующие endpoint-ы:
 - `GET /health` - возвращает `ok`
 - `POST /orders/{orderNumber}/process` - переводит заказ с номером `orderNumber` в статус "обработан"
 
@@ -20,7 +20,7 @@
   * `created_at` - дата и время создания заказа
   * `processed_at` - дата и время обработки заказа
 
-Для дальнейшей работы необходимо предустановить в кластер оператора БД `CloudNativePg`:
+Для дальнейшей работы необходимо предустановить в кластер оператор БД `CloudNativePg`:
 - `helm repo add cnpg https://cloudnative-pg.github.io/charts` - добавление репозитория
 - `helm repo update` - обновление репозитория
 - `helm upgrade --install cnpg cnpg/cloudnative-pg --namespace cnpg-system --create-namespace` - установка оператора БД
@@ -171,3 +171,166 @@ t
 - `kubectl get secret shop-postgres-app --namespace lab3 --output jsonpath='{.data.username}' | base64 --decode`
 - `kubectl get secret shop-postgres-app --namespace lab3 --output jsonpath='{.data.password}' | base64 --decode`
 - `kubectl port-forward --namespace lab3 service/shop-postgres-rw 5433:5432`
+
+Теперь создадим Deployment и Service конфигурации для приложений `api` и `worker` (см. подробнее [install](install)). Конфигурация Deployment [api-deployment.yaml](install/templates/api-deployment.yaml) приложения `api` и [worker-deployment.yaml](install/templates/worker-deployment.yaml) приложения `worker` содержит секцию `initContainers`; данная секция необходима для проверки окончания проведения миграции схемы данных ДО запуска приложения.
+
+Пусть запросы на реплики `api` будут идти на порт `30082`, запросы на реплики `worker` - на порт `30083`.
+
+Соберем docker-образы `api` и `worker`, импортируем их в `minikube` и обновим релиз:
+<details>
+<summary>Результат</summary>
+
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ 
+docker build \
+  --file lab3/api/Dockerfile \
+  --tag lab3-api:1.0 \
+  lab3/api
+[+] Building 168.5s (16/16) FINISHED                                                                                docker:default
+ => [internal] load build definition from Dockerfile                                                                          0.1s
+ => => transferring dockerfile: 406B                                                                                          0.0s
+ => [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy                                               1.8s
+ => [internal] load metadata for docker.io/library/maven:3.9-eclipse-temurin-21                                               1.8s
+ => [internal] load .dockerignore                                                                                             0.1s
+ => => transferring context: 59B                                                                                              0.0s
+ => [build 1/6] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a  0.1s
+ => => resolve docker.io/library/maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b51  0.1s
+ => [internal] load build context                                                                                             0.1s
+ => => transferring context: 7.82kB                                                                                           0.0s
+ => [stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813  0.1s
+ => => resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf412  0.1s
+ => CACHED [build 2/6] WORKDIR /app                                                                                           0.0s
+ => [build 3/6] COPY pom.xml .                                                                                                0.1s
+ => [build 4/6] RUN mvn dependency:go-offline                                                                               158.8s
+ => [build 5/6] COPY src ./src                                                                                                0.2s 
+ => [build 6/6] RUN mvn clean package -DskipTests                                                                             4.2s 
+ => CACHED [stage-1 2/4] WORKDIR /app                                                                                         0.0s 
+ => CACHED [stage-1 3/4] RUN useradd --system --uid 10001 appuser                                                             0.0s 
+ => [stage-1 4/4] COPY --from=build /app/target/lab3-api-1.0.0.jar app.jar                                                    0.4s 
+ => exporting to image                                                                                                        2.3s 
+ => => exporting layers                                                                                                       1.7s 
+ => => exporting manifest sha256:8170bec052d0e372759318c14bcb6a364c632d77616a365d8585bd34e4ce17fe                             0.0s
+ => => exporting config sha256:9374a8419d4a850aa1b3f06118224929179ce2b78bb3b585b8b9c0a6243a8cf5                               0.0s
+ => => exporting attestation manifest sha256:8ee0f6ee7b9cdce9bbe4f37b337f1fc5cc73c97c18ea5b0f4479aeab0c3ac537                 0.1s
+ => => exporting manifest list sha256:c555d91ea80edaef8ed98fab6bd0f79a3b7c17977f535823e8e802637b76c6aa                        0.0s
+ => => naming to docker.io/library/lab3-api:1.0                                                                               0.0s
+ => => unpacking to docker.io/library/lab3-api:1.0                                                                            0.3s
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ docker build \
+  --file lab3/worker/Dockerfile \
+  --tag lab3-worker:1.0 \
+  lab3/worker
+[+] Building 210.3s (16/16) FINISHED                                                                                docker:default
+ => [internal] load build definition from Dockerfile                                                                          0.1s
+ => => transferring dockerfile: 397B                                                                                          0.0s
+ => [internal] load metadata for docker.io/library/eclipse-temurin:21-jre-jammy                                               1.0s
+ => [internal] load metadata for docker.io/library/maven:3.9-eclipse-temurin-21                                               0.9s
+ => [internal] load .dockerignore                                                                                             0.1s
+ => => transferring context: 59B                                                                                              0.0s
+ => [build 1/6] FROM docker.io/library/maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a  0.1s
+ => => resolve docker.io/library/maven:3.9-eclipse-temurin-21@sha256:99e61abcff91a9b1333463bd8451fb18495d6eba9250ac66a338b51  0.1s
+ => [stage-1 1/4] FROM docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813  0.1s
+ => => resolve docker.io/library/eclipse-temurin:21-jre-jammy@sha256:e9aaf73145bbd1f9f6ec7f6867dd75a44f34b1a6c32a813504bf412  0.1s
+ => [internal] load build context                                                                                             0.1s
+ => => transferring context: 8.11kB                                                                                           0.0s
+ => CACHED [build 2/6] WORKDIR /app                                                                                           0.0s
+ => [build 3/6] COPY pom.xml .                                                                                                0.6s
+ => [build 4/6] RUN mvn dependency:go-offline                                                                               200.8s
+ => [build 5/6] COPY src ./src                                                                                                0.2s 
+ => [build 6/6] RUN mvn clean package                                                                                         4.3s 
+ => CACHED [stage-1 2/4] WORKDIR /app                                                                                         0.0s 
+ => CACHED [stage-1 3/4] RUN useradd --system --uid 10001 appuser                                                             0.0s 
+ => [stage-1 4/4] COPY --from=build /app/target/lab3-worker-1.0.0.jar app.jar                                                 0.5s 
+ => exporting to image                                                                                                        2.1s 
+ => => exporting layers                                                                                                       1.7s 
+ => => exporting manifest sha256:732cf296c8f1cb8f3550b5a746ff52b70e7bff4fd66f5cdc4aea39a256769835                             0.0s
+ => => exporting config sha256:40996619122d4112dacc992e6dd5851361064db4ae803950c0dca591feb39438                               0.0s
+ => => exporting attestation manifest sha256:b961eafb7dccfd4a02534557bc581be479c799eaba795c0d5693e4a0da04895f                 0.1s
+ => => exporting manifest list sha256:39ca1638d673b9f58f35a800ca0c231dabdcf04afabfa1286509fdcb6534c10b                        0.0s
+ => => naming to docker.io/library/lab3-worker:1.0                                                                            0.0s
+ => => unpacking to docker.io/library/lab3-worker:1.0                                                                         0.2s
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ minikube image load lab3-api:1.0
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ minikube image load lab3-worker:1.0
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ minikube image load lab3-migration:1.0
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$  helm upgrade --install shop ./lab3/install \
+  --namespace lab3 \
+  --create-namespace \
+  --wait \
+  --wait-for-jobs \
+  --timeout 10m
+Release "shop" has been upgraded. Happy Helming!
+NAME: shop
+LAST DEPLOYED: Tue Sep 29 23:06:29 2026
+NAMESPACE: lab3
+STATUS: deployed
+REVISION: 3
+TEST SUITE: None
+```
+</details>
+
+Проверим статус Pod-ов и сервисов, а также отправим запрос `GET /health` и проверим работоспособность приложения:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl get clusters,pods,jobs,services,pvc -n lab3
+NAME                                       AGE    INSTANCES   READY   STATUS                     PRIMARY
+cluster.postgresql.cnpg.io/shop-postgres   2d2h   1           1       Cluster in healthy state   shop-postgres-1
+
+NAME                                  READY   STATUS      RESTARTS      AGE
+pod/shop-api-59746975c8-4m4x6         1/1     Running     0             47s
+pod/shop-api-59746975c8-9wqgq         1/1     Running     0             47s
+pod/shop-api-59746975c8-sfgw5         1/1     Running     0             47s
+pod/shop-postgres-1                   1/1     Running     1 (12m ago)   2d2h
+pod/shop-schema-migration-1-0-dhfcs   0/1     Completed   0             2d1h
+pod/shop-worker-848c4d6668-gmnp6      1/1     Running     0             47s
+pod/shop-worker-848c4d6668-zkftd      1/1     Running     0             47s
+
+NAME                                  STATUS     COMPLETIONS   DURATION   AGE
+job.batch/shop-schema-migration-1-0   Complete   1/1           13s        2d1h
+
+NAME                       TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+service/shop-api           NodePort    10.105.6.87     <none>        8080:30082/TCP   47s
+service/shop-postgres-r    ClusterIP   10.110.62.221   <none>        5432/TCP         2d2h
+service/shop-postgres-ro   ClusterIP   10.101.26.6     <none>        5432/TCP         2d2h
+service/shop-postgres-rw   ClusterIP   10.104.177.2    <none>        5432/TCP         2d2h
+service/shop-worker        NodePort    10.111.198.83   <none>        8080:30083/TCP   47s
+
+NAME                                    STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/shop-postgres-1   Bound    pvc-71d6826c-8bcb-4492-8024-25766be5df1b   1Gi        RWO            standard       <unset>                 2d2h
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ minikube service shop-api --namespace lab3 --url
+http://192.168.49.2:30082
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl http://192.168.49.2:30082/health
+ok
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl http://192.168.49.2:30083/health
+ok
+```
+</details>
+
+Проверим, что приложение `api` создает заказы, а `worker` корректно их обрабатывает:
+- получим все существующие заказы - `curl http://192.168.49.2:30082/orders`
+- создадим новый заказ - `curl -X POST http://192.168.49.2:30082/order -H "Content-Type: application/json" -d '{"description": "заказ 1"}'`
+- получим список существующих заказов - `curl http://192.168.49.2:30082/orders`
+- обработаем созданный заказ - `curl -X POST http://192.168.49.2:30083/orders/1/process`
+- получим обновленный список заказов - `curl http://192.168.49.2:30082/orders`
+
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl http://192.168.49.2:30082/orders
+[]
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl -X POST http://192.168.49.2:30082/order -H "Content-Type: application/json" -d '{"description": "заказ 1"}'
+{"orderNumber":1,"description":"заказ 1","status":0,"createdAt":"2026-09-29T20:25:30.374206Z","processedAt":null}
+ona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl http://192.168.49.2:30082/orders
+[{"orderNumber":1,"description":"заказ 1","status":0,"createdAt":"2026-09-29T20:25:30.374206Z","processedAt":null}]
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl -X POST http://192.168.49.2:30083/orders/1/process
+{"orderNumber":1,"description":"заказ 1","status":1,"createdAt":"2026-09-29T20:25:30.374206Z","processedAt":"2026-09-29T20:26:35.99847Z"}
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl http://192.168.49.2:30082/orders
+[{"orderNumber":1,"description":"заказ 1","status":1,"createdAt":"2026-09-29T20:25:30.374206Z","processedAt":"2026-09-29T20:26:35.99847Z"}]
+```
+
+![images/part0_ordersPG.png](images/part0_ordersPG.png)
+</details>
+
+Таким образом приложение и база данных корректно работают в Kubernetes.
