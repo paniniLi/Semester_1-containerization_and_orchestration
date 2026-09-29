@@ -1,9 +1,53 @@
 app:
   name: lab3-shop
 
-image:
-  repository:
+##########################################
+## Параметры приложения API
+##########################################
+api:
+  name: shop-api
+  image:
+    repository: lab3-shop-api
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  instances: 3
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    port: 8080
+    type: NodePort
+    nodePort: 30080
 
+##########################################
+## Параметры приложения Worker
+##########################################
+worker:
+  name: shop-worker
+  image:
+    repository: lab3-shop-worker
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  instances: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    port: 8080
+    type: NodePort
+    nodePort: 30081
+
+##########################################
+## Параметры СУДБ Postgres
+##########################################
 postgres:
   instances: 1
   database: shop
@@ -19,15 +63,16 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+
+##########################################
+## Параметры Job по миграции схем данных
+##########################################
 migrations:
+  name: shop-migrations
   image:
-    repository: lab3-migration
-    tag: "1.0"
+    repository: lab3-shop-migrations
+    version: "1.0"
     pullPolicy: IfNotPresent
-
-  backoffLimit: 6
-  activeDeadlineSeconds: 600
-
   resources:
     requests:
       cpu: 50m
@@ -35,3 +80,5 @@ migrations:
     limits:
       cpu: 500m
       memory: 512Mi
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
