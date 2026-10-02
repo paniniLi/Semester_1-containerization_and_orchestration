@@ -6,7 +6,7 @@ api:
     repository: lab3-api
     version: "1.0"
     pullPolicy: IfNotPresent
-  instances: 3
+  instances: 4
   resources:
     requests:
       cpu: 50m
@@ -14,10 +14,19 @@ api:
     limits:
       cpu: 500m
       memory: 512Mi
+  wait_for_schema_migrations:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   service:
     port: 8080
     type: NodePort
     nodePort: 30082
+  health_fail: false
 
 ##########################################
 ## Параметры приложения Worker
@@ -35,6 +44,14 @@ worker:
     limits:
       cpu: 500m
       memory: 512Mi
+  wait_for_schema_migrations:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   service:
     port: 8080
     type: NodePort

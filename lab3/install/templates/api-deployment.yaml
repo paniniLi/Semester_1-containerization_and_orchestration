@@ -8,6 +8,11 @@ metadata:
     app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
 spec:
   replicas: {{ .Values.api.instances }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels: # какие Pod-ы будут учитываться при подсчете количества реплик
       app.kubernetes.io/name: shop-api
@@ -44,6 +49,9 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-postgres-app
                   key: password
+          resources:
+            {{- toYaml .Values.api.wait_for_schema_migrations.resources | nindent 12 }}
+
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.version }}"
@@ -70,6 +78,9 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-postgres-app
                   key: password
+
+            - name: HEALTH_FAIL
+              value: "{{ .Values.api.health_fail }}"
 
           ports:
             - name: http

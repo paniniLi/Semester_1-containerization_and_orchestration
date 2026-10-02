@@ -1,0 +1,42 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  annotations:
+    policies.kyverno.io/title: Require readiness and liveness probes
+    policies.kyverno.io/severity: high
+
+spec:
+  background: true
+
+  rules:
+    - name: require-standard-probes
+      match:
+        any:
+          - resources: # проверяем только Pod-ы генерируемые Deployment, чтобы не накладывать ограничения на конфигурацию Job
+              kinds:
+                - apps/v1/Deployment
+              operations:
+                - CREATE
+                - UPDATE
+      exclude:
+        any:
+          - resources: # исключаемые namespace из проверок
+              namespaces:
+                - kube-system
+                - kyverno
+                - cnpg-system
+                - monitoring
+                # проверить, какие именно необходимо исключать
+
+      validate:
+        failureAction: Enforce
+        cel:
+          expressions:
+            - expression: >-
+                object.spec.template.spec.containers.all(container,
+                  has(container.readinessProbe) &&
+                  has(container.livenessProbe)
+                )
+              message: >-
+                All containers must have readiness and liveness probes.

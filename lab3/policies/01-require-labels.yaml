@@ -1,0 +1,52 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-workload-labels
+  annotations:
+    policies.kyverno.io/title: Require workload labels
+    policies.kyverno.io/severity: medium
+
+spec:
+  background: true
+
+  rules:
+    - name: require-standard-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              operations:
+                - CREATE
+                - UPDATE
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - cnpg-system
+                - monitoring
+
+      validate:
+        failureAction: Enforce
+
+        message: >-
+          Pods must define the required app.kubernetes.io labels.
+
+        cel:
+          expressions:
+            - expression: >-
+                object.metadata.?labels[?'app.kubernetes.io/name'].orValue('') != ''
+              message: >-
+                The label app.kubernetes.io/name is required and must not be empty.
+
+            - expression: >-
+                object.metadata.?labels[?'app.kubernetes.io/instance'].orValue('') != ''
+              message: >-
+                The label app.kubernetes.io/instance is required and must not be empty.
+
+            - expression: >-
+                object.metadata.?labels[?'app.kubernetes.io/part-of'].orValue('') != ''
+              message: >-
+                The label app.kubernetes.io/part-of is required and must not be empty.
