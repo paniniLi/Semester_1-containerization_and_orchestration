@@ -1,16 +1,12 @@
-app:
-  name: lab3-shop
-
 ##########################################
 ## Параметры приложения API
 ##########################################
 api:
-  name: shop-api
   image:
-    repository: lab3-shop-api
+    repository: lab3-api
     version: "1.0"
     pullPolicy: IfNotPresent
-  instances: 3
+  instances: 4
   resources:
     requests:
       cpu: 50m
@@ -18,18 +14,26 @@ api:
     limits:
       cpu: 500m
       memory: 512Mi
+  wait_for_schema_migrations:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   service:
     port: 8080
     type: NodePort
-    nodePort: 30080
+    nodePort: 30082
+  health_fail: false
 
 ##########################################
 ## Параметры приложения Worker
 ##########################################
 worker:
-  name: shop-worker
   image:
-    repository: lab3-shop-worker
+    repository: lab3-worker
     version: "1.0"
     pullPolicy: IfNotPresent
   instances: 2
@@ -40,10 +44,18 @@ worker:
     limits:
       cpu: 500m
       memory: 512Mi
+  wait_for_schema_migrations:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   service:
     port: 8080
     type: NodePort
-    nodePort: 30081
+    nodePort: 30083
 
 ##########################################
 ## Параметры СУДБ Postgres
@@ -68,9 +80,8 @@ postgres:
 ## Параметры Job по миграции схем данных
 ##########################################
 migrations:
-  name: shop-migrations
   image:
-    repository: lab3-shop-migrations
+    repository: lab3-migration
     version: "1.0"
     pullPolicy: IfNotPresent
   resources:

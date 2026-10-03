@@ -1,0 +1,54 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resources
+  annotations:
+    policies.kyverno.io/title: Require resources
+    policies.kyverno.io/severity: high
+
+spec:
+  background: true
+
+  rules:
+    - name: require-standard-resources
+      match:
+        any:
+          - resources: # проверяем только генерируемые Pod-ы
+              kinds:
+                - Pod
+              operations:
+                - CREATE
+                - UPDATE
+      exclude:
+        any:
+          - resources: # исключаемые namespace из проверок
+              namespaces:
+                - kube-system
+                - kyverno
+                - cnpg-system
+                - monitoring
+
+      validate:
+        failureAction: Enforce
+
+        cel:
+          variables:
+            - name: allContainers
+              expression: >-
+                object.spec.containers +
+                object.spec.?initContainers.orValue([])
+
+          expressions:
+            - expression: >-
+                variables.allContainers.all(container,
+                  has(container.resources) &&
+                  has(container.resources.requests) &&
+                  has(container.resources.requests.cpu) &&
+                  has(container.resources.requests.memory) &&
+                  has(container.resources.limits) &&
+                  has(container.resources.limits.cpu) &&
+                  has(container.resources.limits.memory)
+                )
+              message: >-
+                Every container and init container must define CPU and
+                memory requests and limits.

@@ -5,16 +5,18 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: shop-schema-migration
+    app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
 
 spec:
   backoffLimit: {{ .Values.migrations.backoffLimit }} # количество попыток запуска Job в случае неуспешного завершения
-  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }} # временной интервал между попытками повторных запусков Job
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }} # максимальное время выполнения Job
 
   template: # шаблон для Pod, создаваемого данной Job для запуска скрипта миграции
     metadata:
       labels: # метки создаваемых ресурсов
         app.kubernetes.io/name: shop-schema-migration
+        app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
 
     spec:
@@ -47,7 +49,7 @@ spec:
                   key: password
 
           resources:
-{{ toYaml .Values.migrations.resources | indent 12 }}
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
 
           securityContext: # ограничение безопасности запускаемого Linux-процесса (Flyway) внутри контейнера
             allowPrivilegeEscalation: false
