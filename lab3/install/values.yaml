@@ -93,3 +93,10 @@ migrations:
       memory: 512Mi
   backoffLimit: 6
   activeDeadlineSeconds: 600
+
+##########################################
+## Prometheus Operator compatibility
+##########################################
+monitoring:
+  prometheusOperator:
+    enabled: false

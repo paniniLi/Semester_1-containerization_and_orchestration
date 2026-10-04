@@ -92,5 +92,5 @@ spec:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 15
+            initialDelaySeconds: 45
             periodSeconds: 10
