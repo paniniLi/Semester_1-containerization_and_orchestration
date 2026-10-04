@@ -1,0 +1,48 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged
+  annotations:
+    policies.kyverno.io/title: Disallow privileged containers
+    policies.kyverno.io/severity: high
+
+spec:
+  background: true
+
+  rules:
+    - name: disallow-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              operations:
+                - CREATE
+                - UPDATE
+
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - cnpg-system
+                - monitoring
+
+      validate:
+        failureAction: Enforce
+
+        cel:
+          variables:
+            - name: allContainers
+              expression: >-
+                object.spec.containers +
+                object.spec.?initContainers.orValue([])
+
+          expressions:
+            - expression: >-
+                variables.allContainers.all(container,
+                  !container.?securityContext.privileged.orValue(false)
+                )
+              message: >-
+                Privileged containers are not allowed.

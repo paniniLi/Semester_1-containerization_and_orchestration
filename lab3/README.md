@@ -12,9 +12,6 @@
 - `GET /health` - возвращает `ok`
 - `POST /orders/{orderNumber}/process` - переводит заказ с номером `orderNumber` в статус "обработан"
 
-Схема данных имеет следующее строение:
-- таблица `orders` с параметрами:
-  * `order_number` - номер заказа
   * `description` - описание заказа
   * `status` - статус заказа: 0 - заказ создан; 1 - заказ обработан
   * `created_at` - дата и время создания заказа
@@ -336,7 +333,7 @@ pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration
 Таким образом приложение и база данных корректно работают в Kubernetes, можно приступать к основному заданию лабораторной работы.
 
 ## Часть 1 - Ограждения на кластер
-Выберем движок политик Kyverno <обосновать почему>. Установим движок в кластер:
+В качестве движка политик был выбран Kyverno. В отличие от OPA/Gatekeeper, Kyverno позволяет описывать правила в виде Kubernetes-ресурсов YAML и не требует использования отдельного языка Rego. Для локальной лабораторной среды это упрощает создание, проверку и сопровождение политик, сохраняя возможность блокировать некорректные конфигурации на этапе admission. Установим движок в кластер:
 - `helm repo add kyverno https://kyverno.github.io/kyverno/  && helm repo update`  - скачивание зависимости
 - `helm upgrade --install kyverno kyverno/kyverno --namespace kyverno --create-namespace --wait` - установка движка политик Kyverno в кластер
 - `kubectl wait --for=condition=Ready pod --all --namespace kyverno --timeout=180s` - ожидание окончания установки Kyverno в кластер
@@ -405,9 +402,11 @@ pod/kyverno-reports-controller-57c7978d69-tczz4 condition met
 </details>
 
 Реализуем следующие политики проверок ресурсов Kubernetes (см. подробнее в [policies](policies)):
-- проверка наличия меток в генерируемых Pod-ах Kubernetes ресурсами
-- проверка указания ограничений на ресурсы на старт контейнера (`requests`) и на его работу (`limits`)
-- проверка наличия `readiness` и `liveness` проб
+- проверка наличия меток в генерируемых Pod-ах Kubernetes ресурсами;
+- проверка указания ограничений на ресурсы на старт контейнера (`requests`) и на его работу (`limits`);
+- проверка наличия `readiness` и `liveness` проб;
+- запрет запуска контейнеров в привилегированном режиме (`privileged: true`);
+- запрет использования томов типа `hostPath`.
 
 Также создадим тестовые примеры, каждый из которых не удовлетворяет одной из созданных политик (см. подробнее в [policy-test](policy-test)). Проверим возможность установки приложения api с помощью конфигураций из [policy-test](policy-test):
 - `helm template missing-labels lab3/policy-test/missing-labels --namespace default --show-only templates/api-deployment.yaml | kubectl apply --namespace default --dry-run=server --filename -` - проверка (засчет `--dry-run=server`) установки в кластер приложения `api` с помощью конфигурации без метки `name`
@@ -457,58 +456,15 @@ deployment.apps/missing-probes-api created (server dry run)
 <summary>Результат</summary>
 
 ```bash
-pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl apply --filename lab3/policies
-clusterpolicy.kyverno.io/require-workload-labels created
-clusterpolicy.kyverno.io/require-resources created
-clusterpolicy.kyverno.io/require-probes created
-
-pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl get clusterpolicy
+anna@itmo-containers:~/projects/Semester_1-containerization_and_orchestration$ minikube kubectl -- get clusterpolicy
+Warning: kyverno.io/v1 ClusterPolicy is deprecated and will be removed in a future release; migrate to ValidatingPolicy, MutatingPolicy, GeneratingPolicy or ImageValidatingPolicy (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/
 NAME                      ADMISSION   BACKGROUND   READY   AGE   MESSAGE
-require-probes            true        true         True    13s   Ready
-require-resources         true        true         True    14s   Ready
-require-workload-labels   true        true         True    14s   Ready
-pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm template missing-labels \
-  lab3/policy-test/missing-labels \
-  --namespace default \
-  --show-only templates/api-deployment.yaml |
-kubectl apply \
-  --namespace default \
-  --dry-run=server \
-  --filename -
-Error from server: error when creating "STDIN": admission webhook "validate.kyverno.svc-fail" denied the request: 
+disallow-hostpath         true        true         True    31m   Ready
+disallow-privileged       true        true         True    31m   Ready
+require-probes            true        true         True    31m   Ready
+require-resources         true        true         True    31m   Ready
+require-workload-labels   true        true         True    31m   Ready
 
-resource Deployment/default/missing-labels-api was blocked due to the following policies 
-
-require-workload-labels:
-  autogen-require-standard-labels: The label app.kubernetes.io/name is required and must not be empty.
-pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm template missing-resources \
-  lab3/policy-test/missing-resources \
-  --namespace default \
-  --show-only templates/api-deployment.yaml |
-kubectl apply \
-  --namespace default \
-  --dry-run=server \
-  --filename -
-Error from server: error when creating "STDIN": admission webhook "validate.kyverno.svc-fail" denied the request: 
-
-resource Deployment/default/missing-resources-api was blocked due to the following policies 
-
-require-resources:
-  autogen-require-standard-resources: Every container and init container must define CPU and memory requests and limits.
-pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm template missing-probes \
-  lab3/policy-test/missing-probes \
-  --namespace default \
-  --show-only templates/api-deployment.yaml |
-kubectl apply \
-  --namespace default \
-  --dry-run=server \
-  --filename -
-Error from server: error when creating "STDIN": admission webhook "validate.kyverno.svc-fail" denied the request: 
-
-resource Deployment/default/missing-probes-api was blocked due to the following policies 
-
-require-probes:
-  require-standard-probes: All containers must have readiness and liveness probes.
 ```
 </details>
 
@@ -517,12 +473,81 @@ require-probes:
 -[ policy-test/missing-resources](policy-test/missing-resources) - `Every container and init container must define CPU and memory requests and limits.`
 -[ policy-test/missing-probes](policy-test/missing-probes) - `All containers must have readiness and liveness probes.`
 
+Дополнительно были подготовлены тестовые конфигурации для проверки политик безопасности.
+
+Проверка запрета привилегированных контейнеров:
+
+```bash
+helm template privileged lab3/policy-test/privileged \
+  --namespace default \
+  --show-only templates/api-deployment.yaml |
+minikube kubectl -- apply \
+  --namespace default \
+  --dry-run=server \
+  -f -
+```
+
+В тестовой конфигурации для контейнера задан параметр:
+
+```yaml
+securityContext:
+  privileged: true
+```
+
+Kyverno отклонил создание Deployment:
+
+```text
+resource Deployment/default/privileged-api was blocked due to the following policies
+
+disallow-privileged:
+autogen-disallow-privileged-containers: Privileged containers are not allowed.
+```
+
+![Проверка запрета privileged-контейнеров](images/part1-privileged-denied.png)
+
+Проверка запрета использования `hostPath`:
+
+```bash
+helm template hostpath lab3/policy-test/hostpath \
+  --namespace default \
+  --show-only templates/api-deployment.yaml |
+minikube kubectl -- apply \
+  --namespace default \
+  --dry-run=server \
+  -f -
+```
+
+В тестовой конфигурации используется том, предоставляющий контейнеру доступ к директории ноды:
+
+```yaml
+volumes:
+  - name: host-data
+    hostPath:
+      path: /tmp
+      type: Directory
+```
+
+Kyverno также отклонил создание Deployment:
+
+```text
+resource Deployment/default/hostpath-api was blocked due to the following policies
+
+disallow-hostpath:
+autogen-disallow-hostpath-volumes: hostPath volumes are not allowed.
+```
+
+![Проверка запрета hostPath](images/part1-hostpath-denied.png)
+
 Таким образом созданы следующие политики проверки Kubernetes ресурсов (каждая из политик ниже не влияет на ресурсы, создаваемые в системных namespace, namespace оператора БД, а также мониторинга):
 | Policy | Файл конфигурации политики | Описание|
 |-----------|----------------------------|----------|
 | `missing-labels`  |[01-require-labels.yaml](policies/01-require-labels.yaml)| Правило применяется к создаваемым подам (`containers`) Kubernetes-ресурсами. В конфигурации приложения `shop` влияет поды, создаваемые `Deployment`, а также на поды, создаваемые `Job`.|
-| `missing-resources`|[02-require-resources.yaml)](policies/02-require-resources.yaml)| Правило применяется к создаваемым подам (`containers`, `initContainers`) Kubernetes ресурсами. В конфигурации приложения `shop` влияет на поды, создаваемые `Deployment`, а также на поды, создаваемые `Job`.|
-| `missing-probes`|[3-require-probes.yaml](policies/03-require-probes.yaml)| Правило применяется только к конфигурации `Deployment`. Это сделано для того, чтобы не накладывать ограничение на наличие `readiness` и `liveness` проб для подов, создаваемых с помощью `Job`.|
+| `missing-resources`|[02-require-resources.yaml](policies/02-require-resources.yaml)| Правило применяется к создаваемым подам (`containers`, `initContainers`) Kubernetes ресурсами. В конфигурации приложения `shop` влияет на поды, создаваемые `Deployment`, а также на поды, создаваемые `Job`.|
+| `missing-probes`|[03-require-probes.yaml](policies/03-require-probes.yaml)| Правило применяется только к конфигурации `Deployment`. Это сделано для того, чтобы не накладывать ограничение на наличие `readiness` и `liveness` проб для подов, создаваемых с помощью `Job`.|
+| `privileged` | [04-disallow-privileged.yaml](policies/04-disallow-privileged.yaml) | Запрещает запуск контейнеров с `securityContext.privileged: true`. Это предотвращает получение контейнером расширенных привилегий относительно Kubernetes-ноды. |
+| `hostpath` | [05-disallow-hostpath.yaml](policies/05-disallow-hostpath.yaml) | Запрещает использование томов `hostPath`, предоставляющих Pod прямой доступ к файловой системе ноды. |
+
+Таким образом, кластер защищён пятью admission-политиками. Некорректные конфигурации отклоняются до создания ресурсов, что позволяет не полагаться только на ручную проверку Helm-шаблонов.
 
 ## Часть 2 - Чарт api и worker
 Описание реализации конфигурации Kubernetes ресурсов приложений `api` и `worker` представлено в части 0. Релиз включает в себя следующие компоненты:
@@ -1219,3 +1244,308 @@ type: Ready
 Оператор БД CloudNativePG расширяет Kubernetes собственным типом ресурсов Cluster. Тип ресурса регистрируется в etcd, но `kubernetes controller manager` не знает, как управлять данным типом ресурсов. Для этого CloudNativePG реализует собственный контроллер, который наблюдает за объектами с типом `Cluster` и приводит состояние данного объекта к состоянию, описанному в спецификации (spec). Аналогичную задачу решает `kubernetes controller manager`, но только с "базовыми" типами ресурсов, например, `Deployment`, `DaemonSet` и прочее. 
 
 Таким образом, `kubernetes controller manager` - это часть `kubernetes control plane`, который работает с базовыми типами ресурсов, в то время как CloudNativePG оператор выполняет ту же задачу, но с собственным типом ресурсов - `Cluster`.
+
+## Часть 4 - Падение control plane
+
+Проверим поведение уже запущенного приложения при недоступности `control plane`. Для эксперимента временно остановим `etcd`. В используемом кластере Minikube компоненты control plane запускаются как static Pod-ы, конфигурации которых расположены в `/etc/kubernetes/manifests`.
+
+Перед экспериментом проверим работоспособность компонентов приложения:
+
+```bash
+curl --max-time 5 http://192.168.49.2:30082/health
+curl --max-time 5 http://192.168.49.2:30083/health
+curl --max-time 5 http://192.168.49.2:30082/orders
+```
+
+Приложения `api` и `worker` отвечают на запросы, взаимодействие `api` с PostgreSQL также работает.
+
+Для остановки `etcd` временно переместим его manifest из директории static Pod-ов:
+
+```bash
+minikube ssh -- \
+  'sudo mv /etc/kubernetes/manifests/etcd.yaml /tmp/etcd.yaml'
+```
+
+После остановки `etcd` проверим возможность получения текущего состояния кластера:
+
+```bash
+minikube kubectl -- --request-timeout=5s get pods -n lab3
+```
+
+Команда завершается ошибкой:
+
+```text
+Unable to connect to the server: context deadline exceeded
+```
+
+Также попробуем изменить состояние кластера и создать новый `ConfigMap`:
+
+```bash
+printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: control-plane-test\n  namespace: lab3\n' |
+minikube kubectl -- --request-timeout=5s apply -f -
+```
+
+Запрос также завершается по timeout, поскольку `kube-apiserver` не может получить и сохранить состояние Kubernetes без доступного `etcd`.
+
+При этом повторно отправим запросы непосредственно к уже работающим приложениям:
+
+```bash
+curl --max-time 5 http://192.168.49.2:30082/health
+curl --max-time 5 http://192.168.49.2:30083/health
+curl --max-time 5 http://192.168.49.2:30082/orders
+```
+
+Получаем успешные ответы:
+
+```text
+ok
+ok
+[]
+```
+
+Таким образом, недоступность control plane не останавливает уже запущенные контейнеры. `api`, `worker`, сетевое взаимодействие между компонентами и PostgreSQL продолжают работать, однако получить или изменить желаемое состояние кластера через Kubernetes API невозможно.
+
+![Работа приложения при недоступности control plane](images/part4-control-plane-failure.png)
+
+После завершения эксперимента вернём manifest `etcd`:
+
+```bash
+minikube ssh -- \
+  'sudo mv /tmp/etcd.yaml /etc/kubernetes/manifests/etcd.yaml'
+```
+
+После восстановления проверим состояние кластера:
+
+```bash
+minikube status
+minikube kubectl -- get pods -n lab3
+```
+
+Control plane снова доступен, а все компоненты приложения находятся в рабочем состоянии.
+
+Дополнительно проверим, был ли создан `ConfigMap`, отправленный во время недоступности control plane:
+
+```bash
+minikube kubectl -- get configmap control-plane-test -n lab3
+```
+
+Получаем:
+
+```text
+Error from server (NotFound): configmaps "control-plane-test" not found
+```
+
+Следовательно, операция изменения состояния кластера во время отказа `etcd` действительно не была выполнена.
+
+![Восстановление control plane](images/part4-control-plane-recovery.png)
+
+## Часть 5 - Мониторинг
+
+Для мониторинга приложения используется стек, развёрнутый в лабораторной работе №2. Повторное развёртывание Prometheus, Grafana, Alertmanager и Karma не выполнялось.
+
+В существующем стеке используется standalone Prometheus без Prometheus Operator. Поэтому в текущем кластере отсутствуют CRD `ServiceMonitor` и `PrometheusRule`.
+
+Для обеспечения совместимости Helm-chart дополнен шаблонами:
+
+- `templates/servicemonitor.yaml`;
+- `templates/prometheusrule.yaml`.
+
+Их создание управляется параметром:
+
+```yaml
+monitoring:
+  prometheusOperator:
+    enabled: false
+```
+
+При использовании Prometheus Operator параметр может быть включён. В текущем окружении сбор метрик реализован средствами существующего Prometheus из лабораторной работы №2.
+
+### Сбор метрик
+
+Сервисы `api` и `worker` предоставляют Prometheus-метрики через endpoint `/metrics`.
+
+Работоспособность endpoint была проверена непосредственно:
+
+```bash
+curl -i --max-time 5 http://192.168.49.2:30082/metrics
+curl -i --max-time 5 http://192.168.49.2:30083/metrics
+```
+
+Оба сервиса возвращают `HTTP 200` и метрики в формате Prometheus.
+
+В шаблоны Service для `api` и `worker` добавлены аннотации:
+
+```yaml
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "8080"
+```
+
+Существующий Prometheus использует Kubernetes service discovery и автоматически обнаруживает сервисы с аннотацией `prometheus.io/scrape=true`.
+
+Проверим наличие обоих target:
+
+```promql
+up{namespace="lab3"}
+```
+
+В результате Prometheus обнаруживает:
+
+```text
+service="shop-api"     value=1
+service="shop-worker"  value=1
+```
+
+Значение `1` означает, что Prometheus успешно получает метрики обоих сервисов.
+
+### Правила алертинга
+
+Для приложения настроены три критических алерта.
+
+#### ShopApiDown
+
+Алерт срабатывает, если Prometheus не может получать метрики `shop-api` в течение 30 секунд либо target полностью отсутствует:
+
+```promql
+(up{namespace="lab3", service="shop-api"} == 0)
+or
+absent(up{namespace="lab3", service="shop-api"})
+```
+
+Недоступность API является критическим состоянием, поскольку клиенты не могут получать список заказов и создавать новые заказы.
+
+#### ShopWorkerDown
+
+Алерт контролирует доступность сервиса обработки заказов:
+
+```promql
+(up{namespace="lab3", service="shop-worker"} == 0)
+or
+absent(up{namespace="lab3", service="shop-worker"})
+```
+
+Порог также составляет 30 секунд. При недоступности `worker` новые заказы могут продолжать создаваться через API, однако их обработка прекращается.
+
+#### ShopPostgresDown
+
+Состояние PostgreSQL определяется по метрике `kube-state-metrics`:
+
+```promql
+(
+  max(
+    kube_pod_container_status_ready{
+      namespace="lab3",
+      container="postgres"
+    }
+  ) < 1
+)
+or
+absent(
+  kube_pod_container_status_ready{
+    namespace="lab3",
+    container="postgres"
+  }
+)
+```
+
+Алерт срабатывает, если контейнер PostgreSQL не находится в состоянии `Ready` в течение 30 секунд или соответствующая метрика отсутствует.
+
+Недоступность базы данных является критической, поскольку `api` и `worker` зависят от PostgreSQL для хранения и обработки заказов.
+
+### Проверка алертинга
+
+Для проверки работы правил временно уменьшим количество реплик `shop-worker` до нуля:
+
+```bash
+minikube kubectl -- scale deployment shop-worker \
+  -n lab3 \
+  --replicas=0
+```
+
+После исчезновения target Prometheus состояние правила изменяется последовательно:
+
+```text
+ShopWorkerDown state = inactive health = ok
+ShopWorkerDown state = pending health = ok
+ShopWorkerDown state = firing health = ok
+```
+
+При этом два остальных правила остаются неактивными:
+
+```text
+ShopApiDown state = inactive health = ok
+ShopWorkerDown state = firing health = ok
+ShopPostgresDown state = inactive health = ok
+```
+
+![Срабатывание ShopWorkerDown в Prometheus](images/part5-prometheus-alert-firing.png)
+
+После перехода правила в состояние `firing` Prometheus передаёт алерт существующему Alertmanager из лабораторной работы №2.
+
+В Alertmanager отображается активный алерт `ShopWorkerDown` с метками:
+
+```text
+component="worker"
+namespace="lab3"
+service="shop-worker"
+severity="critical"
+```
+
+![ShopWorkerDown в Alertmanager](images/part5-alertmanager-worker-firing.png)
+
+Karma, подключённая к Alertmanager, также отображает активный критический алерт:
+
+![ShopWorkerDown в Karma](images/part5-karma-worker-firing.png)
+
+Таким образом проверена полная цепочка обработки события:
+
+```text
+shop-worker
+    ↓
+Prometheus
+    ↓
+Alert rule
+    ↓
+Alertmanager
+    ↓
+Karma
+```
+
+После завершения проверки `worker` был восстановлен:
+
+```bash
+minikube kubectl -- scale deployment shop-worker \
+  -n lab3 \
+  --replicas=1
+```
+
+После восстановления сервиса правило `ShopWorkerDown` вернулось в состояние `inactive`.
+
+### Совместимость с Prometheus Operator
+
+Несмотря на то что текущий стек лабораторной работы №2 использует standalone Prometheus, Helm-chart содержит требуемые шаблоны `ServiceMonitor` и `PrometheusRule`.
+
+Проверим их генерацию без установки ресурсов в кластер:
+
+```bash
+helm template shop lab3/install \
+  -n lab3 \
+  --set monitoring.prometheusOperator.enabled=true \
+  | grep -E 'kind: (ServiceMonitor|PrometheusRule)'
+```
+
+Получаем:
+
+```text
+kind: PrometheusRule
+kind: ServiceMonitor
+```
+
+Также итоговый Helm-chart успешно проходит проверку:
+
+```text
+1 chart(s) linted, 0 chart(s) failed
+```
+
+Таким образом, мониторинг приложения интегрирован с существующим стеком лабораторной работы №2, Prometheus получает метрики `api` и `worker`, настроены три критических алерта, а срабатывание одного из них подтверждено в Prometheus, Alertmanager и Karma.

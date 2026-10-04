@@ -6,7 +6,7 @@ api:
     repository: lab3-api
     version: "1.0"
     pullPolicy: IfNotPresent
-  instances: 4
+  instances: 3
   resources:
     requests:
       cpu: 50m
@@ -93,3 +93,10 @@ migrations:
       memory: 512Mi
   backoffLimit: 6
   activeDeadlineSeconds: 600
+
+##########################################
+## Prometheus Operator compatibility
+##########################################
+monitoring:
+  prometheusOperator:
+    enabled: false

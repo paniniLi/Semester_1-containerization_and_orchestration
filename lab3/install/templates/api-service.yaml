@@ -5,6 +5,10 @@ metadata:
   labels:
     app.kubernetes.io/name: shop-api
     app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ .Values.api.service.port }}"
 spec:
   type: {{ .Values.api.service.type }}
   selector: # на какие Pod-ы применяется сетевая настройка сервиса

@@ -5,6 +5,10 @@ metadata:
   labels:
     app.kubernetes.io/name: shop-worker
     app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "{{ .Values.worker.service.port }}"
 spec:
   type: {{ .Values.worker.service.type }}
   selector:

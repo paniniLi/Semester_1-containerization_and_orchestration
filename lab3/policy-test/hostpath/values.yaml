@@ -1,0 +1,20 @@
+##########################################
+## Параметры приложения API
+##########################################
+api:
+  image:
+    repository: lab3-api
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  instances: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    port: 8080
+    type: NodePort
+    nodePort: 30082

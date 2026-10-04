@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    app.kubernetes.io/name: shop-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+spec:
+  replicas: {{ .Values.api.instances }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/part-of: shop
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: shop-api
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: shop
+    spec:
+      volumes:
+        - name: host-data
+          hostPath:
+            path: /tmp
+            type: Directory
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.version }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          volumeMounts:
+          - name: host-data
+            mountPath: /host-data
+          resources:
+            {{ toYaml .Values.api.resources | nindent 12 }}
+
+          env:
+            - name: DB_URL # JDBC-адрес PostgreSQL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: jdbc-uri
+
+            - name: DB_USER # пользователь базы
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: username
+
+            - name: DB_PASSWORD # пароль пользователя базы
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: password
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
