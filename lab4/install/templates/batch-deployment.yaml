@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-batch
+  labels:
+    app.kubernetes.io/name: shop-batch
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+spec:
+  replicas: {{ .Values.batch.instances }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: # какие Pod-ы будут учитываться при подсчете количества реплик
+      app.kubernetes.io/name: shop-batch
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/part-of: shop
+  template:
+    metadata: # метки создаваемых Pod-ов
+      labels:
+        app.kubernetes.io/name: shop-batch
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+    spec:
+      containers:
+        - name: batch
+          image: "{{ .Values.batch.image.repository }}:{{ .Values.batch.image.version }}"
+          imagePullPolicy: {{ .Values.batch.image.pullPolicy }}
+          resources:
+            {{ toYaml .Values.batch.resources | nindent 12 }}
+
+          ## Параметры подключения приложения к базе данных
+          env:
+            - name: BATCH_CPU_THREADS
+              value: "{{ .Values.batch.batch_cpu_threads }}"
+            - name: BATCH_MEMORY_MEGABYTES
+              value: "{{ .Values.batch.batch_memory_megabytes }}"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70.0"
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.batch.service.port }}
+          readinessProbe: # параметры для readiness-пробы
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe: # параметры для liveness-пробы
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10

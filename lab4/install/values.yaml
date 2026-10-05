@@ -1,0 +1,125 @@
+##########################################
+## Параметры приложения API
+##########################################
+api:
+  image:
+    repository: lab3-api
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  instances: 4
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  wait_for_schema_migrations:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  service:
+    port: 8080
+    type: NodePort
+    nodePort: 30082
+  health_fail: false
+
+##########################################
+## Параметры приложения Worker
+##########################################
+worker:
+  image:
+    repository: lab3-worker
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  instances: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  wait_for_schema_migrations:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  service:
+    port: 8080
+    type: NodePort
+    nodePort: 30083
+
+
+##########################################
+## Параметры приложения аналитики Batch
+##########################################
+batch:
+  image:
+    repository: lab4-batch
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  instances: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    port: 8080
+  batch_cpu_threads: 1
+  batch_memory_megabytes: 128
+
+##########################################
+## Параметры СУДБ Postgres
+##########################################
+postgres:
+  instances: 1
+  database: shop
+  owner: shop
+  storage:
+    size: 1Gi
+    storageClass: standard
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+
+##########################################
+## Параметры Job по миграции схем данных
+##########################################
+migrations:
+  image:
+    repository: lab3-migration
+    version: "1.0"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+
+
+##########################################
+## Prometheus Operator compatibility
+##########################################
+monitoring:
+  prometheusOperator:
+    enabled: false
