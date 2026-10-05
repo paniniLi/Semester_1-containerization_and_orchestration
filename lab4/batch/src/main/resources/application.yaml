@@ -1,0 +1,29 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+
+spring:
+  application:
+    name: shop-batch
+
+batch:
+  cpu-threads: ${BATCH_CPU_THREADS:1}
+  memory-megabytes: ${BATCH_MEMORY_MEGABYTES:128}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus
+      base-path: /
+      path-mapping:
+        prometheus: metrics
+
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  structured:
+    format:
+      console: logstash

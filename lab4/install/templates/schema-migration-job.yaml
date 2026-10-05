@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-schema-migration-{{ .Values.migrations.image.version | replace "." "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: shop-schema-migration
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }} # количество попыток запуска Job в случае неуспешного завершения
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }} # максимальное время выполнения Job
+
+  template: # шаблон для Pod, создаваемого данной Job для запуска скрипта миграции
+    metadata:
+      labels: # метки создаваемых ресурсов
+        app.kubernetes.io/name: shop-schema-migration
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false # не требуется общаться с Kubernetes API
+
+      containers:
+        - name: schema-migration
+          # наименование образа миграции (собирается dockerfile @lab3/migrations/Dockerfile)
+          image: "{{ .Values.migrations.image.repository }}:{{ .Values.migrations.image.version }}"
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+
+          env:
+            - name: FLYWAY_URL # JDBC-адрес PostgreSQL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: jdbc-uri
+
+            - name: FLYWAY_USER # пользователь базы
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: username
+
+            - name: FLYWAY_PASSWORD # пароль пользователя базы
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgres-app
+                  key: password
+
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+
+          securityContext: # ограничение безопасности запускаемого Linux-процесса (Flyway) внутри контейнера
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
