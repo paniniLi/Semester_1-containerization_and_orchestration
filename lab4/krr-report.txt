@@ -1,0 +1,42 @@
+                                                                                                                         
+Simple Strategy                                                                                                          
+                                                                                                                         
+CPU request: 95.0% percentile, limit: unset                                                                              
+Memory request: max + 15.0%, limit: max + 15.0%                                                                          
+History: 1.0 hours                                                                                                       
+Step: 5.0 minutes                                                                                                        
+                                                                                                                         
+All parameters can be customized. For example: `krr simple --cpu_percentile=90 --memory_buffer_percentage=15             
+--history_duration=24 --timeframe_duration=0.5`                                                                          
+                                                                                                                         
+This strategy does not work with objects with HPA defined (Horizontal Pod Autoscaler).                                   
+If HPA is defined for CPU or Memory, the strategy will return "?" for that resource.                                     
+You can override this behaviour by passing the --allow-hpa flag                                                          
+                                                                                                                         
+Learn more: https://github.com/robusta-dev/krr#algorithm                                                                 
+                                                                                                                         
+┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┓
+┃        ┃        ┃        ┃      ┃ Old     ┃        ┃         ┃ CPU    ┃ CPU     ┃ CPU    ┃ Memory  ┃ Memory ┃ Memory  ┃
+┃ Number ┃ Names… ┃ Name   ┃ Pods ┃ Pods    ┃ Type   ┃ Contai… ┃ Diff   ┃ Reques… ┃ Limits ┃ Diff    ┃ Reque… ┃ Limits  ┃
+┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━┩
+│     1. │ lab4   │ shop-… │ 4    │ 0       │ Deplo… │ api     │ -88m   │ (-22m)  │ 500m   │ +532Mi  │ (+133… │ 512Mi   │
+│        │        │        │      │         │        │         │ (4     │ 50m ->  │ ->     │ (4      │ 128Mi  │ ->      │
+│        │        │        │      │         │        │         │ pods)  │ 28m     │ unset  │ pods)   │ ->     │ 261Mi   │
+│        │        │        │      │         │        │         │        │         │        │         │ 261Mi  │         │
+├────────┼────────┼────────┼──────┼─────────┼────────┼─────────┼────────┼─────────┼────────┼─────────┼────────┼─────────┤
+│     2. │ lab4   │ shop-… │ 1    │ 0       │ Deplo… │ batch   │ -120m  │ (-120m) │ 500m   │ -145Mi  │ (-145… │ 512Mi   │
+│        │        │        │      │         │        │         │        │ 500m -> │ ->     │         │ 512Mi  │ ->      │
+│        │        │        │      │         │        │         │        │ 380m    │ unset  │         │ ->     │ 367Mi   │
+│        │        │        │      │         │        │         │        │         │        │         │ 367Mi  │         │
+├────────┼────────┼────────┼──────┼─────────┼────────┼─────────┼────────┼─────────┼────────┼─────────┼────────┼─────────┤
+│     3. │ lab4   │ shop-… │ 2    │ 0       │ Deplo… │ worker  │ -80m   │ (-40m)  │ 500m   │ +200Mi  │ (+100… │ 512Mi   │
+│        │        │        │      │         │        │         │ (2     │ 50m ->  │ ->     │ (2      │ 128Mi  │ ->      │
+│        │        │        │      │         │        │         │ pods)  │ 10m     │ unset  │ pods)   │ ->     │ 228Mi   │
+│        │        │        │      │         │        │         │        │         │        │         │ 228Mi  │         │
+├────────┼────────┼────────┼──────┼─────────┼────────┼─────────┼────────┼─────────┼────────┼─────────┼────────┼─────────┤
+│     4. │ lab4   │ shop-… │ 0    │ 1       │ Job    │ schema… │        │ 50m ->  │ 500m   │         │ 128Mi  │ 512Mi   │
+│        │        │        │      │         │        │         │ (0     │ ?       │ -> ?   │ (0      │ -> ?   │ -> ?    │
+│        │        │        │      │         │        │         │ pods)  │ (No     │ (No    │ pods)   │ (No    │ (No     │
+│        │        │        │      │         │        │         │        │ data)   │ data)  │         │ data)  │ data)   │
+└────────┴────────┴────────┴──────┴─────────┴────────┴─────────┴────────┴─────────┴────────┴─────────┴────────┴─────────┘
+                                                      47 points - D                                                      

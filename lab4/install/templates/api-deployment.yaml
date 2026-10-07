@@ -25,6 +25,29 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
     spec:
+      {{- if eq .Values.api.spreadMechanism "topologySpreadConstraints" }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          nodeTaintsPolicy: Honor
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: shop-api
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- else if eq .Values.api.spreadMechanism "podAntiAffinity" }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: shop-api
+                    app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- end }}
+
       initContainers: # проверяем, применены ли изменения к схеме данных; до окончания их применения не запускаем приложение
         - name: wait-for-schema-migrations
           image: "{{ .Values.migrations.image.repository }}:{{ .Values.migrations.image.version }}"

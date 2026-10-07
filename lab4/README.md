@@ -5,6 +5,98 @@
 - `BATCH_CPU_THREADS` - количество занимаемых ядер
 - `BATCH_MEMORY_MEGABYTES` - количество удерживаемых Мегабайт
 
+## Часть 1 - Выбор механизма разнесения
+
+Для размещения реплик `api` по разным нодам добавим возможность выбора между двумя механизмами Kubernetes:
+
+- `topologySpreadConstraints`
+- `podAntiAffinity`
+
+Выбор механизма задается в `values.yaml`:
+
+```yaml
+api:
+  spreadMechanism: topologySpreadConstraints
+```
+
+В качестве основного механизма выберем `topologySpreadConstraints`.
+
+В лабораторной используются 4 реплики `api` и 2 worker-ноды. `topologySpreadConstraints` позволяет равномерно распределять несколько реплик между ограниченным количеством нод. При четырех репликах ожидаемое распределение между двумя worker-нодами составляет `2 + 2`.
+
+Для `api` зададим следующие параметры:
+
+```yaml
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: shop-api
+        app.kubernetes.io/instance: {{ .Release.Name }}
+```
+
+`topologyKey: kubernetes.io/hostname` означает, что доменом распределения является отдельная нода Kubernetes.
+
+`maxSkew: 1` ограничивает максимальную разницу в количестве подходящих Pod-ов между нодами единицей.
+
+`whenUnsatisfiable: DoNotSchedule` запрещает размещение нового Pod-а, если его запуск нарушит заданное ограничение распределения.
+
+В качестве альтернативы поддерживается `podAntiAffinity`:
+
+```yaml
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: shop-api
+              app.kubernetes.io/instance: {{ .Release.Name }}
+```
+
+Для `podAntiAffinity` используется мягкое правило `preferredDuringSchedulingIgnoredDuringExecution`. Строгий вариант `requiredDuringSchedulingIgnoredDuringExecution` в данном случае не подходит: при 4 репликах `api` и только 2 worker-нодах Kubernetes смог бы разместить не более одной подходящей реплики на каждой ноде, а остальные Pod-ы остались бы в состоянии `Pending`.
+
+Проверим корректность Helm-chart:
+
+```bash
+helm lint lab4/install
+```
+
+Результат:
+
+```text
+1 chart(s) linted, 0 chart(s) failed
+```
+
+Проверим рендеринг основного механизма:
+
+```bash
+helm template shop lab4/install \
+  --set api.spreadMechanism=topologySpreadConstraints |
+grep -A12 topologySpreadConstraints
+```
+
+Helm формирует блок `topologySpreadConstraints` с `maxSkew: 1` и `topologyKey: kubernetes.io/hostname`.
+
+![Проверка рендеринга topologySpreadConstraints](images/part1-topology-spread.png)
+
+Также проверим переключение на альтернативный механизм:
+
+```bash
+helm template shop lab4/install \
+  --set api.spreadMechanism=podAntiAffinity |
+grep -A15 podAntiAffinity
+```
+
+При изменении значения параметра Helm формирует блок `podAntiAffinity`.
+
+![Проверка рендеринга podAntiAffinity](images/part1-pod-antiaffinity.png)
+
+Таким образом, Helm-chart поддерживает оба механизма разнесения, а в качестве основного выбран `topologySpreadConstraints`, поскольку он позволяет равномерно распределить все реплики `api` между небольшим количеством worker-нод.
+
 ## Часть 2 - Тесная площадка
 Создадим кластер на 3 ноды (см. конфигурацию кластера в [kind.yaml](kind.yaml)):
 - нода, на которой будет расположен `control plane` - защитим ее `taint = lab4-control-plane` для того, чтобы на нее не ставились поды приложения
@@ -156,4 +248,134 @@ pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration
   --name lab4
 ```
 
+## Часть 3 - Нагрузочное тестирование и подбор ресурсов с KRR
 
+Для получения рекомендаций по ресурсам была создана нагрузка на критический путь приложения через `POST /order`.
+
+Для генерации нагрузки использовался `hey`:
+
+```bash
+hey \
+  -z 5m \
+  -c 5 \
+  -q 1 \
+  -m POST \
+  -T application/json \
+  -d '{"description":"load-test"}' \
+  http://127.0.0.1:8080/order
+```
+
+В течение 5 минут было получено около 5 запросов в секунду. Успешно обработано 1485 запросов со статусом `201`.
+
+Для сбора метрик был развернут Prometheus. Проверено наличие метрик CPU и памяти контейнеров в namespace `lab4`.
+
+KRR запускался с использованием Prometheus:
+
+```bash
+python krr.py simple \
+  -c kind-lab4 \
+  -n lab4 \
+  -p http://127.0.0.1:9090 \
+  --history-duration 1 \
+  --timeframe-duration 5 \
+  --points-required 3
+```
+
+Поскольку Prometheus был развернут непосредственно перед экспериментом, доступная история метрик была короче заданного часа, поэтому для лабораторного запуска порог `points-required` был уменьшен до 3.
+
+Использовалась стратегия Simple:
+
+- CPU request определяется по 95-му перцентилю использования CPU;
+- memory request определяется как максимальное использование памяти + 15%;
+- CPU limit стратегия KRR не устанавливает.
+
+Рекомендации KRR:
+
+| Компонент | Исходный CPU request | Новый CPU request | Исходная память | Новая память |
+|---|---:|---:|---:|---:|
+| API | 50m | 28m | 128Mi | 261Mi |
+| Worker | 50m | 10m | 128Mi | 228Mi |
+| Batch | 500m | 380m | 512Mi | 367Mi |
+
+По результатам KRR первоначальные оценки ресурсов оказались достаточно консервативными по CPU, но заниженными по памяти для API и Worker. Для API CPU request снизился с 50m до 28m, при этом рекомендуемый объем памяти вырос со 128Mi до 261Mi, что связано с фактическим потреблением приложения под нагрузкой. Для Worker CPU request снизился до минимального значения 10m, однако потребление памяти потребовало увеличения request до 228Mi. Для Batch первоначальные значения 500m CPU и 512Mi памяти оказались завышенными: KRR рекомендовал 380m CPU и 367Mi памяти.
+
+PostgreSQL развернут через CloudNativePG и не определяется KRR как стандартный Deployment/StatefulSet. Поэтому его использование ресурсов было получено непосредственно из Prometheus с применением того же подхода:
+
+- CPU 95-й перцентиль: около 17m;
+- максимальная память: около 132.5 MiB;
+- с буфером 15%: 153Mi.
+
+Для PostgreSQL были установлены:
+
+```text
+CPU request: 17m
+Memory request: 153Mi
+Memory limit: 153Mi
+```
+
+После получения рекомендаций значения были внесены в `values.yaml` и применены через:
+
+```bash
+helm upgrade --install shop ./lab4/install \
+  -n lab4 \
+  --wait \
+  --wait-for-jobs \
+  --timeout 10m
+```
+
+CPU limits оставлены равными `500m`, поскольку действующие политики Kubernetes требуют наличия limits, а стратегия KRR Simple не формирует рекомендацию для CPU limit.
+
+После обновления были получены следующие значения:
+
+```text
+shop-api     CPU request 28m    memory 261Mi    CPU limit 500m
+shop-worker  CPU request 10m    memory 228Mi    CPU limit 500m
+shop-batch   CPU request 380m   memory 367Mi    CPU limit 500m
+shop-postgres CPU request 17m   memory 153Mi    CPU limit 500m
+```
+
+Таким образом, исходные приблизительные значения ресурсов были заменены значениями, полученными на основании фактического потребления под нагрузкой.
+
+![KRR recommendations](images/part3-krr.png)
+
+![Applied resources](images/part3-resources.png)
+
+## Часть 4 - Разнесение критического сервиса
+
+Для сервиса `api` применим выбранный в Части 1 механизм `topologySpreadConstraints`.
+
+В качестве топологии используется имя Kubernetes-ноды:
+
+```yaml
+topologyKey: kubernetes.io/hostname
+```
+
+Проверим размещение реплик `api` по нодам:
+
+```bash
+kubectl get pods -n lab4 \
+  -l app.kubernetes.io/name=shop-api \
+  -o wide
+```
+
+Дополнительно подсчитаем количество реплик на каждой worker-ноде:
+
+```bash
+kubectl get pods -n lab4 \
+  -l app.kubernetes.io/name=shop-api \
+  -o custom-columns='NODE:.spec.nodeName' \
+  --no-headers | sort | uniq -c
+```
+
+В результате четыре реплики `api` распределились между двумя worker-нодами:
+
+```text
+2 lab4-worker
+2 lab4-worker2
+```
+
+Таким образом, критический сервис не размещается целиком на одной ноде. При отказе одной worker-ноды часть реплик `api` продолжит работать на второй ноде, что повышает отказоустойчивость критического пути приложения.
+
+Во время rolling update возможно временное неравномерное распределение уже запущенных Pod-ов. `topologySpreadConstraints` учитывается при планировании новых Pod-ов, но Kubernetes не выполняет автоматический ребаланс уже размещенных реплик. После пересоздания одной из реплик scheduler восстановил равномерное распределение `2 + 2`.
+
+![Распределение реплик API по worker-нодам](images/part4-api-spread.png)
