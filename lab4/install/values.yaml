@@ -7,13 +7,14 @@ api:
     version: "1.0"
     pullPolicy: IfNotPresent
   instances: 4
+  spreadMechanism: topologySpreadConstraints
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 28m
+      memory: 261Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 261Mi
   wait_for_schema_migrations:
     resources:
       requests:
@@ -39,11 +40,11 @@ worker:
   instances: 2
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 10m
+      memory: 228Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 228Mi
   wait_for_schema_migrations:
     resources:
       requests:
@@ -69,11 +70,11 @@ batch:
   instances: 1
   resources:
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 380m
+      memory: 367Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 367Mi
   service:
     port: 8080
   batch_cpu_threads: 1
@@ -91,11 +92,11 @@ postgres:
     storageClass: standard
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 17m
+      memory: 153Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 153Mi
 
 
 ##########################################

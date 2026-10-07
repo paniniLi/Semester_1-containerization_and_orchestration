@@ -27,6 +27,7 @@ spec:
                 - kyverno
                 - cnpg-system
                 - monitoring
+                - local-path-storage
 
       validate:
         failureAction: Enforce
