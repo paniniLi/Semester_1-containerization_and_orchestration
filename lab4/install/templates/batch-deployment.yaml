@@ -25,6 +25,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
     spec:
+      priorityClassName: {{ .Values.batch.priorityClassName }}
       containers:
         - name: batch
           image: "{{ .Values.batch.image.repository }}:{{ .Values.batch.image.version }}"

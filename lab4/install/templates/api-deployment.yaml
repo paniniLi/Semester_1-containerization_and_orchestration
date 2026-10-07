@@ -25,6 +25,8 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
     spec:
+      priorityClassName: {{ .Values.api.priorityClassName }}
+
       {{- if eq .Values.api.spreadMechanism "topologySpreadConstraints" }}
       topologySpreadConstraints:
         - maxSkew: 1

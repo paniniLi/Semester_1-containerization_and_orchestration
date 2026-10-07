@@ -1,0 +1,18 @@
+{{- if .Values.api.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: shop-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+spec:
+  ## максимальное количество подов приложения, которое можно одновременно вывести из строя
+  maxUnavailable: {{ .Values.api.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shop-api
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

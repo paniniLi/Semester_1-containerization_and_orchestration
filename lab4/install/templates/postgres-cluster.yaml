@@ -9,6 +9,8 @@ metadata:
 
 spec:
   instances: {{ .Values.postgres.instances }}
+  priorityClassName: {{ .Values.postgres.priorityClassName }}
+  enablePDB: {{ .Values.postgres.podDisruptionBudget.enabled }} # признак автоматического создания ресурсов PodDisruptionBudget оператором CloudNativePG для PostgreSQL подов
 
   inheritedMetadata:
     labels: # метки создаваемых ресурсов

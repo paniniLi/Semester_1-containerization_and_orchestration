@@ -6,20 +6,20 @@ api:
     repository: lab3-api
     version: "1.0"
     pullPolicy: IfNotPresent
-  instances: 4
+  instances: 3
   spreadMechanism: topologySpreadConstraints
-  resources:
+  resources: # обеспечиваем QoS Guaranteed: requests = limits
     requests:
-      cpu: 28m
+      cpu: 500m
       memory: 261Mi
     limits:
       cpu: 500m
       memory: 261Mi
   wait_for_schema_migrations:
-    resources:
+    resources: # обеспечиваем QoS Guaranteed: requests = limits
       requests:
-        cpu: 50m
-        memory: 128Mi
+        cpu: 500m
+        memory: 512Mi
       limits:
         cpu: 500m
         memory: 512Mi
@@ -28,6 +28,10 @@ api:
     type: NodePort
     nodePort: 30082
   health_fail: false
+  priorityClassName: shop-critical
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 ##########################################
 ## Параметры приложения Worker
@@ -68,17 +72,20 @@ batch:
     version: "1.0"
     pullPolicy: IfNotPresent
   instances: 1
-  resources:
+  resources: # обеспечиваем QoS Burstable: requests < limits
     requests:
       cpu: 380m
       memory: 367Mi
     limits:
       cpu: 500m
-      memory: 367Mi
+      memory: 512Mi
   service:
     port: 8080
   batch_cpu_threads: 1
   batch_memory_megabytes: 128
+  priorityClassName: shop-background
+  podDisruptionBudget:
+    enabled: true
 
 ##########################################
 ## Параметры СУДБ Postgres
@@ -90,13 +97,16 @@ postgres:
   storage:
     size: 1Gi
     storageClass: standard
-  resources:
+  resources: # обеспечиваем QoS Guaranteed: requests = limits
     requests:
-      cpu: 17m
+      cpu: 500m
       memory: 153Mi
     limits:
       cpu: 500m
       memory: 153Mi
+  priorityClassName: shop-critical
+  podDisruptionBudget:
+    enabled: true
 
 
 ##########################################
@@ -115,8 +125,24 @@ migrations:
       cpu: 500m
       memory: 512Mi
   backoffLimit: 6
-  activeDeadlineSeconds: 600
+  activeDeadlineSeconds: 1200
 
+
+##########################################
+## Параметры PriorityClass
+##########################################
+priorityClasses:
+  enabled: true
+
+  critical:
+    name: shop-critical
+    value: 100000
+    preemptionPolicy: PreemptLowerPriority
+
+  background:
+    name: shop-background
+    value: -1000
+    preemptionPolicy: PreemptLowerPriority
 
 ##########################################
 ## Prometheus Operator compatibility
