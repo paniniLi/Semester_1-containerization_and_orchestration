@@ -842,6 +842,52 @@ Events:
 ## Часть 8 - Докажи SLA под нагрузкой
 Для того чтобы под нагрузкой из пунктов 6 и 7 не вытеснился стек мониторига, а также оператор БД, необходимо их установить на ноду `control-plane`, куда не ставятся функциональные компоненты `shop` (см. подробнее параметры конфигурации в [install/monitoring.values.yaml](install/monitoring.values.yaml) и [install/cnpg.values.yaml](install/cnpg.values.yaml)). Обновим релизы мониторинга и оператора БД, подключимся к Grafana и настроим дашборды для наблюдения метрик.
 ```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm upgrade --install monitoring ./lab2/observability   --namespace monitoring \
+  --kube-context kind-lab4 \
+  --values ./lab4/install/monitoring.values.yaml \
+  --values ./lab2/observability/grafana-secret.values.yaml \
+  --wait \
+  --timeout 15m
+Release "monitoring" has been upgraded. Happy Helming!
+NAME: monitoring
+LAST DEPLOYED: Fri Oct  9 23:01:01 2026
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 8
+TEST SUITE: None
+
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm upgrade cnpg cnpg/cloudnative-pg \
+  --version 0.29.1 \
+  --namespace cnpg-system \
+  --kube-context kind-lab4 \
+  --values ./lab4/install/cnpg.values.yaml \
+  --wait \
+  --timeout 5m
+Release "cnpg" has been upgraded. Happy Helming!
+NAME: cnpg
+LAST DEPLOYED: Fri Oct  9 23:29:36 2026
+NAMESPACE: cnpg-system
+STATUS: deployed
+REVISION: 2
+TEST SUITE: None
+NOTES:
+CloudNativePG operator should be installed in namespace "cnpg-system".
+You can now create a PostgreSQL cluster with 3 nodes as follows:
+
+cat <<EOF | kubectl apply -f -
+# Example of PostgreSQL cluster
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+  
+spec:
+  instances: 3
+  storage:
+    size: 1Gi
+EOF
+
+kubectl get -A cluster
 pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl port-forward   --namespace monitoring   --context kind-lab4   svc/monitoring-grafana 3000:80
 Forwarding from 127.0.0.1:3000 -> 3000
 ```
