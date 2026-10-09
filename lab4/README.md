@@ -838,3 +838,126 @@ Events:
 </details>
 
 Видим сообщение - `The node was low on resource: memory. Threshold quantity: 10Gi, available: 8380220Ki.`, таким образом Pod был удален с ноды из-за превышения общего показателя по памяти. Поскольку `batch` имеет самый низкий приоритет и класс обслуживания `Burstable`, он является первым претендентом на удаления с ноды.
+
+## Часть 8 - Докажи SLA под нагрузкой
+Для того чтобы под нагрузкой из пунктов 6 и 7 не вытеснился стек мониторига, а также оператор БД, необходимо их установить на ноду `control-plane`, куда не ставятся функциональные компоненты `shop` (см. подробнее параметры конфигурации в [install/monitoring.values.yaml](install/monitoring.values.yaml) и [install/cnpg.values.yaml](install/cnpg.values.yaml)). Обновим релизы мониторинга и оператора БД, подключимся к Grafana и настроим дашборды для наблюдения метрик.
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl port-forward   --namespace monitoring   --context kind-lab4   svc/monitoring-grafana 3000:80
+Forwarding from 127.0.0.1:3000 -> 3000
+```
+Создадим следующие визуализации:
+- POST /order p95 latency - доступность `POST /order`
+- POST /order 5xx error rate - количество ошибок запроса `POST /order`
+- POST /order request rate - нагрузка со стороны запроса `POST /order`
+- Batch Desired vs ready replicas - соотношение целевого значения количества подов `batch` и реального количество
+
+В ходе подачи нагрузки будем анализировать работоспособность `POST /order` по показателю `POST /order p95 latency`, остальные метрики, касающиеся `POST /orders` служат для более глубокого понимания, что происходит с системой. Деградацию `batch` будем отслеживать по соотношению целевого количества подов в кластере к реальному количеству. Формулы вышеперечисленных метрик представлены ниже:
+<details>
+<summary>Формула POST /order p95 latency</summary>
+
+```text
+1000 * histogram_quantile(
+  0.95,
+  sum by (le) (
+    rate(http_server_requests_seconds_bucket{
+      namespace="lab4",
+      service="shop-api",
+      uri="/order",
+      method="POST",
+      status="201"
+    }[5m])
+  )
+)
+```
+</details>
+
+<details>
+<summary>Формула POST /order 5xx error rate</summary>
+
+```text
+100 *
+(
+  sum(rate(http_server_requests_seconds_count{
+    namespace="lab4",
+    service="shop-api",
+    uri="/order",
+    method="POST",
+    status=~"5.."
+  }[5m])) or vector(0)
+)
+/
+clamp_min(
+  sum(rate(http_server_requests_seconds_count{
+    namespace="lab4",
+    service="shop-api",
+    uri="/order",
+    method="POST"
+  }[5m])) or vector(0),
+  0.000000001
+)
+```
+</details>
+
+<details>
+<summary>Формула POST /order request rate</summary>
+
+```text
+sum(rate(http_server_requests_seconds_count{
+  namespace="lab4",
+  service="shop-api",
+  uri="/order",
+  method="POST"
+}[5m]))
+```
+</details>
+
+<details>
+<summary>Формула Batch Desired vs ready replicas</summary>
+Вычисление целевого количества подов:
+
+```text
+max(
+  last_over_time(kube_deployment_spec_replicas{
+    namespace="lab4",
+    deployment="shop-batch"
+  }[5m])
+)
+```
+
+Вычисление актуального количества подов:
+```text
+max(
+    kube_deployment_status_replicas_ready{
+        namespace="lab4", 
+        deployment="shop-batch"
+    }
+) or vector(0)
+```
+</details>
+
+Проведем следующий эксперимент:
+1. Запустим нагрузку с помощью `helm`:
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ NO_PROXY=172.18.0.2 no_proxy=172.18.0.2 \
+  hey \
+  -z 50m \
+  -c 5 \
+  -q 1 \
+  -m POST \
+  -T application/json \
+  -d '{"description":"load-test"}' \
+  http://172.18.0.2:30082/order
+```
+
+2. Увеличим количество подов `batch` таким образом, чтобы перестало хватать ресурсов для установки в кластер: `batch.instances=9`, `batch.resources.requests.memory=1600m`, `batch.resources.requests.memory=2000m`
+3. Понаблюдаем и увеличим количество подов `api`: `api.instances=5`
+4. Спустя некоторое время вернем настройки к изначальным и воспроизведем опыт из части 7: увеличим лимиты (чтобы не словить OOMKilled) и потребление памяти: `batch.resources.limits.memory=10Gi`, `batch.batch_memory_megabytes=5632`
+5. Построим вышеперечисленные графики в grafana и сформируем SLA
+
+Результаты мониторинга представлены ниже; данные, снятые до 23:00 - тестовые, эксперимент данного пункта проводился после 23:00:
+
+![images/part8_grafana.png](images/part8_grafana.png)
+
+Можно заметить, что latency 95% запросов на протяжении всего эксперимента не увеличивается: ни в случае вытеснения подов `batch` из-за eviction (часть 7), ни при попытке запросить у кластера больше ресурсов, чем тот может предоставить (часть 6). Можно сформулировать следующий SLA: 95% запросов обрабатываются более чем за 200m.
+
+Также видим, что количество подов `batch` не всегда соответствует желаемому значению.

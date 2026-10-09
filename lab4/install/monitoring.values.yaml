@@ -1,0 +1,121 @@
+##########################################
+## Настройки Grafana
+##########################################
+grafana:
+  enabled: true
+  nodeSelector: ## установка grafana только на control-plane ноду
+    node-role.kubernetes.io/control-plane: ""
+  tolerations: ## разрешаем установку на ноду с control-plane, чтобы вытеснение рабочих подов не влияло на мониторинг
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists # значение taint не проверяем
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources: # список источников данных
+        - name: Loki
+          uid: loki
+          type: loki
+          access: proxy # запросы к Loki выполняет backend Grafana, а не браузер пользователя
+          # Grafana и Loki развернуты одним Helm-релизом в одном namespace,
+          # поэтому достаточно короткого DNS-имени сервиса. Имя релиза
+          # Helm подставляет автоматически.
+          url: 'http://{{ .Release.Name }}-loki-gateway'
+          isDefault: false
+          editable: false
+
+        - name: Prometheus
+          uid: prometheus
+          type: prometheus
+          access: proxy
+          url: 'http://{{ .Release.Name }}-prometheus-server'
+          isDefault: true
+          editable: false
+
+  sidecar: ## Настройки для автоматического создания dashboard с выбранными метриками
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: null
+      resource: configmap
+      provider:
+        allowUiUpdates: false
+
+## Параметры аутентификации задаются в файле grafana-secret.values.yaml и передаются в параметры обновления Helm-релиза.
+## По-умолчанию включена автоматическая генерация пароля. Узнать пароль можно с помощью команды:
+## kubectl get secret monitoring-grafana -n monitoring  -o jsonpath='{.data.admin-password}' | base64 -d
+grafanaCredentials:
+  create: false
+  username: ""
+  password: ""
+
+##########################################
+## Настройки Loki
+##########################################
+loki:
+  enabled: false
+
+##########################################
+## Настройки Alloy
+##########################################
+alloy:
+  enabled: false
+
+##########################################
+## Настройки Jaeger
+##########################################
+jaeger:
+  enabled: false
+
+##########################################
+## Настройки JaegerUi
+##########################################
+jaegerUi:
+  enabled: false
+
+##########################################
+## Настройки Prometheus
+##########################################
+prometheus:
+  enabled: true
+
+  alertmanager:
+    enabled: false
+
+  prometheus-pushgateway:
+    enabled: false
+
+  prometheus-node-exporter:
+    enabled: false
+
+  kube-state-metrics:
+    enabled: true
+
+  server:
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: ""
+
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+    persistentVolume:
+      enabled: false
