@@ -1,0 +1,15 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- range $policyName, $policySpec := .Values.networkPolicy.policies }} # проходим по всем политикам из values.yaml
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-%s" $.Release.Name $policyName | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/part-of: shop
+spec:
+{{ toYaml $policySpec | nindent 2 }}
+{{- end }}
+{{- end }}

@@ -272,3 +272,64 @@ pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration
 mode: iptables
 ```
 Таким образом, режим работы `kube-proxy` - `iptables`. В данном режиме на каждой ноде создаются правила, отвечающие за маршрутизацию трафика, поступающего на `CluaterIp`. В режиме `IPVS` для маршрутизации трафика используется механизм виртуальных серверов ядра Linux, основанный на хэш-таблицах. Данный режим больше подходит для кластеров с большим количеством сервисов, так как значительно быстрее "ищет" нужный под для обработки запроса.
+
+## Часть 3 - Спроектируй целевую матрицу доступа
+Для начала получим список всех подов кластера:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 get pods --all-namespaces
+NAMESPACE            NAME                                                 READY   STATUS      RESTARTS   AGE
+cnpg-system          cnpg-cloudnative-pg-7b5f5d7b65-9zr45                 1/1     Running     0          3h29m
+kube-system          cilium-2hxwn                                         1/1     Running     0          3h40m
+kube-system          cilium-envoy-85c7q                                   1/1     Running     0          3h40m
+kube-system          cilium-envoy-cjwxc                                   1/1     Running     0          3h40m
+kube-system          cilium-operator-649867d84-7d87l                      1/1     Running     0          3h40m
+kube-system          cilium-operator-649867d84-wpwrh                      1/1     Running     0          3h40m
+kube-system          cilium-tds8f                                         1/1     Running     0          3h40m
+kube-system          coredns-559f6c778d-g9mfh                             1/1     Running     0          3h50m
+kube-system          coredns-559f6c778d-w8bzh                             1/1     Running     0          3h50m
+kube-system          etcd-lab5-control-plane                              1/1     Running     0          3h50m
+kube-system          hubble-relay-856fb9b979-nmlbk                        1/1     Running     0          3h40m
+kube-system          kube-apiserver-lab5-control-plane                    1/1     Running     0          3h50m
+kube-system          kube-controller-manager-lab5-control-plane           1/1     Running     0          3h50m
+kube-system          kube-proxy-m9kr8                                     1/1     Running     0          3h50m
+kube-system          kube-proxy-v8nx2                                     1/1     Running     0          3h50m
+kube-system          kube-scheduler-lab5-control-plane                    1/1     Running     0          3h50m
+lab5                 shop-api-77f999d9c7-6kjnx                            1/1     Running     0          40m
+lab5                 shop-api-77f999d9c7-f29kl                            1/1     Running     0          40m
+lab5                 shop-api-77f999d9c7-gph79                            1/1     Running     0          40m
+lab5                 shop-api-77f999d9c7-tcgj9                            1/1     Running     0          39m
+lab5                 shop-postgres-1                                      1/1     Running     0          3h26m
+lab5                 shop-schema-migration-1-0-2cj6m                      0/1     Completed   0          3h28m
+lab5                 shop-worker-6d45dc5667-jl8cz                         1/1     Running     0          3h28m
+lab5                 shop-worker-6d45dc5667-n6kh7                         1/1     Running     0          3h28m
+local-path-storage   local-path-provisioner-75f7fc7dc5-mjzn6              1/1     Running     0          3h50m
+monitoring           alert-webhook-5cdbdcd846-j42lb                       1/1     Running     0          117m
+monitoring           karma-789dcf7bb-gf9gb                                1/1     Running     0          117m
+monitoring           monitoring-grafana-6cc85976b-sr6bx                   2/2     Running     0          117m
+monitoring           monitoring-kube-state-metrics-d8585c799-6x6lt        1/1     Running     0          117m
+monitoring           monitoring-prometheus-pushgateway-6848799c65-fxn76   1/1     Running     0          69m
+monitoring           monitoring-prometheus-server-5d8866d458-6tjmn        2/2     Running     0          117m
+```
+</details>
+Построим карту взаимодействия компонент из namespace `lab5`:
+
+| Источники | Получатель | Разрешение |
+|---|---|---|
+| `внешний клиент` | `shop-api` | TCP 8080 через сервис NodePort 30082 |
+| `внешний клиент` | `shop-worker` | TCP 8080 через сервис NodePort 30083 |
+| `shop-api`, `shop-worker`, `shop-schema-migration`| `shop-postgres` | TCP 5432 |
+| `shop-api`, `shop-worker`, `shop-schema-migration`, `посторонний pod` | `CoreDNS` | UDP/TCP 53 |
+| `Prometheus` из namespace monitoring | `shop-api`, `shop-worker` | TCP 8080 |
+| `CloudNativePG` из namespace cnpg-system | `shop-postgres` | TCP 8000 |
+| `PostgreSQL instance manager` | `Kubernetes API` | TCP 443 |
+
+## Часть 4 - Включи zero-trust
+Создадим Kubernetes ресурс, генерирующий политики доступа zero-trust namespace - см. подробнее [install/templates/networkpolicies.yaml](install/templates/networkpolicies.yaml). Настройки политик описаны в секции `networkPolicy` в [install/values.yaml](install/values.yaml).
+- по-умолчанию весь трафик в namespace запрещен (исходящий и входящий) - данное поведение настраивается засчет политики `networkPolicy.policies.default-deny`
+- параметры доступа трафика `api`, `worker`, `postgres` и job миграции описаны соответственно в политиках `networkPolicy.policies.api`, `networkPolicy.policies.worker`, `networkPolicy.policies.postgres` и `networkPolicy.policies.schema-migration`
+- разрешение исходящего трафика к `CoreDNS` представлено в `networkPolicy.policies.allow-dns`
+
+## Часть 5 - Докажи матрицу на практике

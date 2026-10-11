@@ -100,3 +100,151 @@ migrations:
 monitoring:
   prometheusOperator:
     enabled: false
+
+##########################################
+## Параметры NetworkPolicy
+##########################################
+networkPolicy:
+  enabled: true
+
+  policies:
+    default-deny: # запрещаем весь входящий и исходящий трафик
+      podSelector: {} # политика default-deny применяется ко всем подам в текущем namespace
+      policyTypes:
+        - Ingress # входящий трафик
+        - Egress # исходящий трафик
+      ingress: []
+      egress: []
+
+    allow-dns: # разрешаем весь исходящий трафик на CoreDNS
+      podSelector: {}
+      policyTypes:
+        - Egress
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+          ports:
+            - protocol: UDP
+              port: 53
+            - protocol: TCP
+              port: 53
+
+    # Политика API
+    api:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: shop-api
+          app.kubernetes.io/part-of: shop
+      policyTypes:
+        - Ingress
+        - Egress
+
+      ingress: # входящий трафик принимается от всех клиентов
+        - ports:
+            - protocol: TCP
+              port: 8080
+
+      egress: # исходящий трафик допускается только на PostgreSQL
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-postgres
+                  app.kubernetes.io/part-of: shop
+          ports:
+            - protocol: TCP
+              port: 5432
+
+    # Политика worker
+    worker:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: shop-worker
+          app.kubernetes.io/part-of: shop
+      policyTypes:
+        - Ingress
+        - Egress
+
+      ingress: # входящий трафик принимается от всех клиентов
+        - ports:
+            - protocol: TCP
+              port: 8080
+
+      egress: # исходящий трафик допускается только на PostgreSQL
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-postgres
+                  app.kubernetes.io/part-of: shop
+          ports:
+            - protocol: TCP
+              port: 5432
+
+    # Политика миграции схемы
+    schema-migration:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: shop-schema-migration
+          app.kubernetes.io/part-of: shop
+      policyTypes:
+        - Ingress
+        - Egress
+
+      ingress: [] # входящий трафик запрещен
+
+      egress: # исходящий трафик допускается только на PostgreSQL
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-postgres
+                  app.kubernetes.io/part-of: shop
+          ports:
+            - protocol: TCP
+              port: 5432
+
+      # Политика PostgreSQL
+    postgres:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: shop-postgres
+          app.kubernetes.io/part-of: shop
+      policyTypes:
+        - Ingress
+        - Egress
+
+      ingress:
+        - from: # разрешен входящий трафик со стороны api, worker и job по миграции схем
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-api
+                  app.kubernetes.io/part-of: shop
+
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-worker
+                  app.kubernetes.io/part-of: shop
+
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-schema-migration
+                  app.kubernetes.io/part-of: shop
+          ports:
+            - protocol: TCP
+              port: 5432
+
+        - from: # разрешен входящий трафик со стороны CloudNativePG operator для обращения к instance manager
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: cnpg-system
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: cloudnative-pg
+          ports:
+            - protocol: TCP
+              port: 8000
+
+      egress: []
