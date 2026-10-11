@@ -3,12 +3,13 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: {{ .Release.Name }}-alerts
+  namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: shop
 spec:
   groups:
-    - name: lab3-shop-alerts
+    - name: lab4-shop-alerts
       rules:
         - alert: ShopApiDown
           expr: |
@@ -21,43 +22,46 @@ spec:
             component: api
           annotations:
             summary: "Shop API is unavailable"
-            description: "Prometheus cannot scrape the shop API for at least 30 seconds."
+            description: "Prometheus cannot scrape the critical API for at least 30 seconds."
 
-        - alert: ShopWorkerDown
+        - alert: ShopOrderLatencyHigh
           expr: |
-            (up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-worker"} == 0)
-            or
-            absent(up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-worker"})
-          for: 30s
-          labels:
-            severity: critical
-            component: worker
-          annotations:
-            summary: "Shop worker is unavailable"
-            description: "Prometheus cannot scrape the shop worker for at least 30 seconds."
-
-        - alert: ShopPostgresDown
-          expr: |
-            (
-              max(
-                kube_pod_container_status_ready{
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(http_server_requests_seconds_bucket{
                   namespace="{{ .Release.Namespace }}",
-                  container="postgres"
-                }
-              ) < 1
-            )
-            or
-            absent(
-              kube_pod_container_status_ready{
-                namespace="{{ .Release.Namespace }}",
-                container="postgres"
-              }
-            )
+                  service="{{ .Release.Name }}-api",
+                  uri="/order",
+                  method="POST",
+                  status="201"
+                }[5m])
+              )
+            ) > 0.2
+          for: 1m
+          labels:
+            severity: warning
+            component: api
+          annotations:
+            summary: "Order API p95 latency exceeds SLA"
+            description: "The p95 latency of POST /order is above 200 ms for at least one minute."
+
+        - alert: ShopBatchDegraded
+          expr: |
+            kube_deployment_spec_replicas{
+              namespace="{{ .Release.Namespace }}",
+              deployment="{{ .Release.Name }}-batch"
+            }
+            >
+            kube_deployment_status_replicas_ready{
+              namespace="{{ .Release.Namespace }}",
+              deployment="{{ .Release.Name }}-batch"
+            }
           for: 30s
           labels:
-            severity: critical
-            component: postgres
+            severity: warning
+            component: batch
           annotations:
-            summary: "Shop PostgreSQL is unavailable"
-            description: "The PostgreSQL container has not been ready for at least 30 seconds."
+            summary: "Batch workload is degraded"
+            description: "The number of ready batch replicas is lower than the desired number for at least 30 seconds."
 {{- end }}

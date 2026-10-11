@@ -149,4 +149,4 @@ priorityClasses:
 ##########################################
 monitoring:
   prometheusOperator:
-    enabled: false
+    enabled: true
