@@ -1,0 +1,29 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Release.Name }}-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: shop-postgres
+    app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+
+spec:
+  instances: {{ .Values.postgres.instances }}
+
+  inheritedMetadata:
+    labels: # метки создаваемых ресурсов
+      app.kubernetes.io/name: shop-postgres
+      app.kubernetes.io/part-of: shop
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.postgres.database | quote }}
+      owner: {{ .Values.postgres.owner | quote }}
+
+  enableSuperuserAccess: false # приложения должны использовать непривилегированного владельца базы
+  storage:
+    size: {{ .Values.postgres.storage.size | quote }}
+    storageClass: {{ .Values.postgres.storage.storageClass | quote }}
+
+  resources:
+{{ toYaml .Values.postgres.resources | indent 4 }}

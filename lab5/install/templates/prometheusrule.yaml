@@ -1,0 +1,63 @@
+{{- if .Values.monitoring.prometheusOperator.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-alerts
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+spec:
+  groups:
+    - name: lab3-shop-alerts
+      rules:
+        - alert: ShopApiDown
+          expr: |
+            (up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-api"} == 0)
+            or
+            absent(up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-api"})
+          for: 30s
+          labels:
+            severity: critical
+            component: api
+          annotations:
+            summary: "Shop API is unavailable"
+            description: "Prometheus cannot scrape the shop API for at least 30 seconds."
+
+        - alert: ShopWorkerDown
+          expr: |
+            (up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-worker"} == 0)
+            or
+            absent(up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-worker"})
+          for: 30s
+          labels:
+            severity: critical
+            component: worker
+          annotations:
+            summary: "Shop worker is unavailable"
+            description: "Prometheus cannot scrape the shop worker for at least 30 seconds."
+
+        - alert: ShopPostgresDown
+          expr: |
+            (
+              max(
+                kube_pod_container_status_ready{
+                  namespace="{{ .Release.Namespace }}",
+                  container="postgres"
+                }
+              ) < 1
+            )
+            or
+            absent(
+              kube_pod_container_status_ready{
+                namespace="{{ .Release.Namespace }}",
+                container="postgres"
+              }
+            )
+          for: 30s
+          labels:
+            severity: critical
+            component: postgres
+          annotations:
+            summary: "Shop PostgreSQL is unavailable"
+            description: "The PostgreSQL container has not been ready for at least 30 seconds."
+{{- end }}
