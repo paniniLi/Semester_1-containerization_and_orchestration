@@ -159,6 +159,23 @@ networkPolicy:
             - protocol: TCP
               port: 5432
 
+    # Политика доступа к api
+    allow-api-egress:
+      podSelector: { }
+
+      policyTypes:
+        - Egress
+
+      egress: # внутри namespace всем подам допускается отправлять запросы на api
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-api
+                  app.kubernetes.io/part-of: shop
+          ports:
+            - protocol: TCP
+              port: 8080
+
     # Политика worker
     worker:
       podSelector:
@@ -183,6 +200,23 @@ networkPolicy:
           ports:
             - protocol: TCP
               port: 5432
+
+    # Политика доступа к worker
+    allow-worker-egress:
+      podSelector: { }
+
+      policyTypes:
+        - Egress
+
+      egress: # внутри namespace всем подам допускается отправлять запросы на worker
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: shop-worker
+                  app.kubernetes.io/part-of: shop
+          ports:
+            - protocol: TCP
+              port: 8080
 
     # Политика миграции схемы
     schema-migration:
@@ -247,4 +281,30 @@ networkPolicy:
             - protocol: TCP
               port: 8000
 
-      egress: []
+      egress: # разрешен исходящий трафик для CloudNativePG instance manager к Kubernetes API
+        - ports:
+            - protocol: TCP
+              port: 443
+
+            - protocol: TCP # Фактический порт kube-api server после Service translation
+              port: 6443
+
+    # Политика push-gateway
+    allow-pushgateway-egress:
+      podSelector: { } # публиковать метрики в Prometheus могут все поды
+
+      policyTypes:
+        - Egress
+
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus-pushgateway
+                  app.kubernetes.io/instance: monitoring
+          ports:
+            - protocol: TCP
+              port: 9091

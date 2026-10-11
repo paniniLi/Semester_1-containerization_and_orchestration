@@ -333,3 +333,348 @@ monitoring           monitoring-prometheus-server-5d8866d458-6tjmn        2/2   
 - разрешение исходящего трафика к `CoreDNS` представлено в `networkPolicy.policies.allow-dns`
 
 ## Часть 5 - Докажи матрицу на практике
+Обновим релиз и проверим установленные политики:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --contekubectl --context kind-lab5 get networkpolicy   --namespace lab5
+NAME                            POD-SELECTOR                                                                  AGE
+shop-allow-api-egress           <none>                                                                        111s
+shop-allow-dns                  <none>                                                                        3h9m
+shop-allow-pushgateway-egress   <none>                                                                        111s
+shop-allow-worker-egress        <none>                                                                        111s
+shop-api                        app.kubernetes.io/name=shop-api,app.kubernetes.io/part-of=shop                3h9m
+shop-default-deny               <none>                                                                        3h9m
+shop-postgres                   app.kubernetes.io/name=shop-postgres,app.kubernetes.io/part-of=shop           3h9m
+shop-schema-migration           app.kubernetes.io/name=shop-schema-migration,app.kubernetes.io/part-of=shop   3h9m
+shop-worker                     app.kubernetes.io/name=shop-worker,app.kubernetes.io/part-of=shop             3h9m
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 get pods \
+  --namespace lab5
+NAME                              READY   STATUS             RESTARTS     AGE
+shop-api-77f999d9c7-6kjnx         0/1     Unknown            0            4h24m
+shop-api-77f999d9c7-f29kl         0/1     Unknown            0            4h23m
+shop-api-77f999d9c7-gph79         0/1     Unknown            0            4h24m
+shop-api-77f999d9c7-tcgj9         0/1     Unknown            0            4h23m
+shop-postgres-1                   0/1     CrashLoopBackOff   1 (6s ago)   7h10m
+shop-schema-migration-1-0-2cj6m   0/1     Completed          0            7h12m
+shop-worker-6d45dc5667-jl8cz      0/1     Unknown            0            7h12m
+shop-worker-6d45dc5667-n6kh7      0/1     Unknown            0            7h12m
+```
+</details>
+
+Видим, что политика `shop-api` применилась к подам с меткой `shop-api`, являющимися частью приложения `shop`, `shop-postgres` - к подам с меткой `shop-postgres`, `shop-schema-migration` - к подам с меткой `shop-schema-migration` и `shop-worker` - к подам с меткой `shop-worker`.
+
+Пройдем матрицу из пункта 3 и попробуем достучаться до соответствующего пода. Проведем следующие эксперименты:
+1. Проверим, что то, что должно работать, работает:
+   * внешний клиент может отправить запрос на `api` и `worker` - `GET /health`
+   * приложение `api` может подключиться к `postgres` - `POST /order`
+   * приложение `worker` может подключиться к `postgres` - `POST /orders/{orderNumber}/process`
+   * корректно проходит обновление схемы с помощью job `shop-schema-migration`
+   * трафик от любого пода поступает в `CoreDNS`
+   * `prometheus` собирает метрики с `shop-api` и `shop-worker`
+   * при удалении пода `postgres` оператор БД его восстанавливает
+2. Проверим, что то, что работать НЕ должно, не работает:
+   * поднимем под `test-postgres-connect`, который пытается подключиться к `postgres`
+
+Отправим запрос `GET /health` на `api` и `worker`:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 get pods \ \
+  --namespace lab5 \
+  --selector app.kubernetes.io/part-of=shop \
+  -o wide
+NAME                              READY   STATUS      RESTARTS        AGE     IP             NODE          NOMINATED NODE   READINESS GATES
+shop-api-77f999d9c7-6kjnx         1/1     Running     1 (34m ago)     4h54m   10.244.1.57    lab5-worker   <none>           <none>
+shop-api-77f999d9c7-f29kl         1/1     Running     1 (34m ago)     4h53m   10.244.1.135   lab5-worker   <none>           <none>
+shop-api-77f999d9c7-gph79         1/1     Running     1 (34m ago)     4h54m   10.244.1.178   lab5-worker   <none>           <none>
+shop-api-77f999d9c7-tcgj9         1/1     Running     1 (34m ago)     4h53m   10.244.1.46    lab5-worker   <none>           <none>
+shop-postgres-1                   1/1     Running     7 (8m22s ago)   7h40m   10.244.1.61    lab5-worker   <none>           <none>
+shop-schema-migration-1-0-2cj6m   0/1     Completed   0               7h42m   <none>         lab5-worker   <none>           <none>
+shop-worker-6d45dc5667-jl8cz      1/1     Running     1 (34m ago)     7h42m   10.244.1.124   lab5-worker   <none>           <none>
+shop-worker-6d45dc5667-n6kh7      1/1     Running     1 (34m ago)     7h42m   10.244.1.154   lab5-worker   <none>           <none>
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 get nodes -o wide
+NAME                 STATUS   ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                       KERNEL-VERSION              CONTAINER-RUNTIME
+lab5-control-plane   Ready    control-plane   8h    v1.37.0   172.18.0.2    <none>        Debian GNU/Linux 13 (trixie)   6.8.0-138-generic (amd64)   containerd://2.3.4
+lab5-worker          Ready    <none>          8h    v1.37.0   172.18.0.3    <none>        Debian GNU/Linux 13 (trixie)   6.8.0-138-generic (amd64)   containerd://2.3.4
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl --noproxy '*' http://172.18.0.3:30082/health
+ok
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl --noproxy '*' http://172.18.0.3:30083/health
+ok
+```
+</details>
+
+Таким образом внешний пользователь имеет доступ к `api` и `worker`. Теперь проверим есть ли возможность отправить запросы из `api` и `worker` на `postgres`:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl --noproxy '*' \
+  --include \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{"description":"test"}' \
+  http://172.18.0.3:30082/order
+HTTP/1.1 201 
+Content-Type: application/json
+Content-Length: 110
+Date: Sun, 11 Oct 2026 19:14:50 GMT
+
+{"orderNumber":1,"description":"test","status":0,"createdAt":"2026-10-11T19:14:49.826066Z","processedAt":null}
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl --noproxy '*' \
+  --include \
+  --request POST \
+  http://172.18.0.3:30083/orders/1/process  
+HTTP/1.1 200 
+Content-Type: application/json
+Content-Length: 135
+Date: Sun, 11 Oct 2026 19:16:04 GMT
+
+{"orderNumber":1,"description":"test","status":1,"createdAt":"2026-10-11T19:14:49.826066Z","processedAt":"2026-10-11T19:16:03.704502Z"}
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ curl --noproxy '*' http://172.18.0.3:30082/orders
+[{"orderNumber":1,"description":"test","status":1,"createdAt":"2026-10-11T19:14:49.826066Z","processedAt":"2026-10-11T19:16:03.704502Z"}]
+```
+</details>
+
+Видим, что доступ со стороны `api` и `worker` к БД есть. Для проверки доступа к `postgres` из job `shop-schema-migration` запустим job заново:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 delete job \
+  shop-schema-migration-1-0 \
+  --namespace lab5
+job.batch "shop-schema-migration-1-0" deleted from lab5 namespace
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ helm upgrade --install shop ./lab5/install \
+  --namespace lab5 \
+  --kube-context kind-lab5 \
+  --wait \
+  --wait-for-jobs \
+  --timeout 10m
+Release "shop" has been upgraded. Happy Helming!
+NAME: shop
+LAST DEPLOYED: Sun Oct 11 22:22:52 2026
+NAMESPACE: lab5
+STATUS: deployed
+REVISION: 8
+TEST SUITE: None
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl get pods -n lab5
+NAME                              READY   STATUS      RESTARTS      AGE
+shop-api-77f999d9c7-6kjnx         1/1     Running     1 (46m ago)   5h6m
+shop-api-77f999d9c7-f29kl         1/1     Running     1 (46m ago)   5h5m
+shop-api-77f999d9c7-gph79         1/1     Running     1 (46m ago)   5h6m
+shop-api-77f999d9c7-tcgj9         1/1     Running     1 (46m ago)   5h5m
+shop-postgres-1                   1/1     Running     7 (20m ago)   7h52m
+shop-schema-migration-1-0-s98vw   0/1     Completed   0             16s
+shop-worker-6d45dc5667-jl8cz      1/1     Running     1 (46m ago)   7h54m
+shop-worker-6d45dc5667-n6kh7      1/1     Running     1 (46m ago)   7h54m
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 logs \
+  --namespace lab5 \
+  job/shop-schema-migration-1-0
+WARNING: Storing migrations in 'sql' is not recommended and default scanning of this location may be deprecated in a future release
+Flyway OSS Edition 13.7.0 by Redgate
+
+See release notes here: https://help.red-gate.com/help/flyway-cli13/help_7.aspx?topic=release-notes-and-older-versions/release-notes-for-flyway-engine
+Database: ******** (PostgreSQL 18.6)
+Successfully validated 1 migration (execution time 00:00.197s)
+Current version of schema "public": 1
+Schema "public" is up to date. No migration necessary.
+```
+</details>
+
+Следовательно, из job `shop-schema-migration` также есть доступ к `postgres`. Далее проверим, что трафик из любого пода namespace lab5 поступает в CoreDNS: выполним DNS-запрос из сетевого namespace `shop-api`:
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 \
+  --namespace lab5 \
+  exec deployment/shop-api -- \
+  getent hosts shop-postgres-rw.lab5.svc.cluster.local
+Defaulted container "api" out of: api, wait-for-schema-migrations (init)
+10.96.226.60    shop-postgres-rw.lab5.svc.cluster.local
+```
+Посмотрим, ход запросов от `shop-api` на под `coredns`, порт 53:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 \
+  --namespace kube-system \
+  exec cilium-tds8f -- \
+  hubble observe \
+    --follow \
+    --from-pod lab5/shop-api \
+    --to-pod kube-system/coredns \
+    --to-port 53 \
+    --print-policy-names
+Oct 11 19:25:26.900: lab5/shop-api-77f999d9c7-6kjnx:52126 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.900: lab5/shop-api-77f999d9c7-6kjnx:52126 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.900: lab5/shop-api-77f999d9c7-6kjnx:45083 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.900: lab5/shop-api-77f999d9c7-6kjnx:45083 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:35536 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:35536 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:55426 (ID:30693) -> kube-system/coredns-559f6c778d-w8bzh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:55426 (ID:30693) -> kube-system/coredns-559f6c778d-w8bzh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:50137 (ID:30693) -> kube-system/coredns-559f6c778d-w8bzh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:50137 (ID:30693) -> kube-system/coredns-559f6c778d-w8bzh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:56017 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:56017 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:35584 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:35584 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:35867 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) policy-verdict:L3-L4 EGRESS ALLOWED BY shop-allow-dns (NetworkPolicy) (UDP)
+Oct 11 19:25:26.901: lab5/shop-api-77f999d9c7-6kjnx:35867 (ID:30693) -> kube-system/coredns-559f6c778d-g9mfh:53 (ID:40953) to-endpoint FORWARDED (UDP)
+```
+</details>
+
+Дополнительно проверим, что под, запущенный внутри namespace lab5 также имеет доступ к `api` и публикации метрик `prometheus`:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ ./lab5/run-load-client.sh
+pod "load-client" deleted from lab5 namespace
+pod/load-client created
+pod/load-client condition met
+Load client is running. Follow its output with:
+kubectl --context kind-lab5 logs --namespace lab5 --follow load-client
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 get pod load-client \
+  --namespace lab5 \
+  --show-labels
+NAME          READY   STATUS    RESTARTS   AGE   LABELS
+load-client   1/1     Running   0          23s   app.kubernetes.io/name=load-client,app.kubernetes.io/part-of=shop
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 logs load-client \
+  --namespace lab5 \
+  --follow
+2026-10-11T19:43:54Z SUCCESS total=1 success=1 failed=0
+2026-10-11T19:43:54Z SUCCESS total=2 success=2 failed=0
+2026-10-11T19:43:54Z SUCCESS total=3 success=3 failed=0
+2026-10-11T19:43:55Z SUCCESS total=4 success=4 failed=0
+2026-10-11T19:43:55Z SUCCESS total=5 success=5 failed=0
+2026-10-11T19:43:55Z SUCCESS total=6 success=6 failed=0
+2026-10-11T19:43:55Z SUCCESS total=7 success=7 failed=0
+2026-10-11T19:43:55Z SUCCESS total=8 success=8 failed=0
+2026-10-11T19:43:56Z SUCCESS total=9 success=9 failed=0
+2026-10-11T19:43:56Z SUCCESS total=10 success=10 failed=0
+2026-10-11T19:43:56Z SUCCESS total=11 success=11 failed=0
+2026-10-11T19:43:56Z SUCCESS total=12 success=12 failed=0
+2026-10-11T19:43:56Z SUCCESS total=13 success=13 failed=0
+```
+</details>
+
+Таким образом, внутри namespace lab5 есть доступ к `CoreDNS` у всех подов и все поды могут публиковать в `Prometheus` метрики. Проверим, что `prometheus` может получать метрики с подов namespace `lab5`, для этого из контейнера `prometheus` отправим запрос на получение метрик с подов `shop-api` и `shop-worker`:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 exec \
+  --namespace monitoring \
+  deployment/monitoring-prometheus-server \
+  --container prometheus-server \
+  -- wget -qO- \
+  http://shop-api.lab5.svc.cluster.local:8080/metrics \
+  | head
+# HELP application_ready_time_seconds Time taken for the application to be ready to service requests
+# TYPE application_ready_time_seconds gauge
+application_ready_time_seconds{main_application_class="org.panini.Application"} 22.001
+# HELP application_started_time_seconds Time taken to start the application
+# TYPE application_started_time_seconds gauge
+application_started_time_seconds{main_application_class="org.panini.Application"} 21.494
+# HELP disk_free_bytes Usable space for path
+# TYPE disk_free_bytes gauge
+disk_free_bytes{path="/app/."} 1.8294759424E10
+# HELP disk_total_bytes Total space for path
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 exec \
+  --namespace monitoring \
+  deployment/monitoring-prometheus-server \
+  --container prometheus-server \
+  -- wget -qO- \
+  http://shop-worker.lab5.svc.cluster.local:8080/metrics \
+  | head
+# HELP application_ready_time_seconds Time taken for the application to be ready to service requests
+# TYPE application_ready_time_seconds gauge
+application_ready_time_seconds{main_application_class="org.panini.Application"} 24.686
+# HELP application_started_time_seconds Time taken to start the application
+# TYPE application_started_time_seconds gauge
+application_started_time_seconds{main_application_class="org.panini.Application"} 24.286
+# HELP disk_free_bytes Usable space for path
+# TYPE disk_free_bytes gauge
+disk_free_bytes{path="/app/."} 1.8294104064E10
+# HELP disk_total_bytes Total space for path
+```
+</details>
+
+Таким образом, запросы от `prometheus` к подам проходят. Теперь удалим под `postgres` и проверим, что оператор БД смог получить информацию о его отсутствии и перезапустил установку `postgres`:
+<details>
+<summary>Результат</summary>
+
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 delete pod shop-postgres-1 \
+  --namespace lab5 \
+  --wait
+pod "shop-postgres-1" deleted from lab5 namespace
+```
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ kubectl --context kind-lab5 get pods \
+  --namespace lab5 \
+  --watch
+NAME                              READY   STATUS      RESTARTS      AGE
+load-client                       1/1     Running     0             12m
+shop-api-77f999d9c7-6kjnx         1/1     Running     1 (79m ago)   5h39m
+shop-api-77f999d9c7-f29kl         1/1     Running     1 (79m ago)   5h39m
+shop-api-77f999d9c7-gph79         1/1     Running     1 (79m ago)   5h39m
+shop-api-77f999d9c7-tcgj9         1/1     Running     1 (79m ago)   5h38m
+shop-postgres-1                   1/1     Running     7 (53m ago)   8h
+shop-schema-migration-1-0-s98vw   0/1     Completed   0             33m
+shop-worker-6d45dc5667-jl8cz      1/1     Running     1 (79m ago)   8h
+shop-worker-6d45dc5667-n6kh7      1/1     Running     1 (79m ago)   8h
+shop-postgres-1                   1/1     Terminating   7 (53m ago)   8h
+shop-postgres-1                   1/1     Terminating   7 (53m ago)   8h
+shop-postgres-1                   0/1     Terminating   7 (54m ago)   8h
+shop-postgres-1                   0/1     Completed     7 (56m ago)   8h
+shop-postgres-1                   0/1     Completed     7 (56m ago)   8h
+shop-postgres-1                   0/1     Completed     7 (56m ago)   8h
+shop-postgres-1                   0/1     Pending       0             0s
+shop-postgres-1                   0/1     Pending       0             0s
+shop-postgres-1                   0/1     Init:0/1      0             0s
+shop-postgres-1                   0/1     Init:0/1      0             1s
+shop-postgres-1                   0/1     Init:0/1      0             1s
+shop-postgres-1                   0/1     PodInitializing   0             2s
+shop-postgres-1                   0/1     Running           0             2s
+shop-postgres-1                   0/1     Running           0             4s
+shop-postgres-1                   0/1     Running           0             5s
+shop-postgres-1                   0/1     Running           0             10s
+shop-postgres-1                   1/1     Running           0             11s
+```
+</details>
+
+Таким образом все разрешенные входящие и исходящие запросы работают корректно. Теперь проверим, что к `postgres` нет доступа из стороннего пода. Для этого создадим скрипт [run-postgres-client.sh](run-postgres-client.sh), который создает под `postgres-client`, получает параметры подключения `postgres` и каждые 2 секунды выполняет `SELECT 1`, считая успешные и неуспешные запросы. Запустим скрипт и проверим его логи:
+```bash
+pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ 
+kubectl --context kind-lab5 logs \
+  --namespace lab5 \
+  --follow postgres-client
+2026-10-11T20:06:14Z FAILED total=1 success=0 failed=1 error=psql: error: connection to server at "shop-postgres-rw" (10.96.226.60), port 5432 failed: timeout expired
+2026-10-11T20:06:18Z FAILED total=2 success=0 failed=2 error=psql: error: connection to server at "shop-postgres-rw" (10.96.226.60), port 5432 failed: timeout expired
+2026-10-11T20:06:22Z FAILED total=3 success=0 failed=3 error=psql: error: connection to server at "shop-postgres-rw" (10.96.226.60), port 5432 failed: timeout expired
+2026-10-11T20:06:26Z FAILED total=4 success=0 failed=4 error=psql: error: connection to server at "shop-postgres-rw" (10.96.226.60), port 5432 failed: timeout expired
+2026-10-11T20:06:30Z FAILED total=5 success=0 failed=5 error=psql: error: connection to server at "shop-postgres-rw" (10.96.226.60), port 5432 failed: timeout expired
+```
+
+После удаления сетевых политик видим следующие логи в созданном поде:
+```bash
+2026-10-11T20:11:07Z SUCCESS total=74 success=1 failed=73 query_result=1
+2026-10-11T20:11:09Z SUCCESS total=75 success=2 failed=73 query_result=1
+2026-10-11T20:11:11Z SUCCESS total=76 success=3 failed=73 query_result=1
+2026-10-11T20:11:13Z SUCCESS total=77 success=4 failed=73 query_result=1
+2026-10-11T20:11:15Z SUCCESS total=78 success=5 failed=73 query_result=1
+2026-10-11T20:11:17Z SUCCESS total=79 success=6 failed=73 query_result=1
+2026-10-11T20:11:19Z SUCCESS total=80 success=7 failed=73 query_result=1
+2026-10-11T20:11:21Z SUCCESS total=81 success=8 failed=73 query_result=1
+2026-10-11T20:11:23Z SUCCESS total=82 success=9 failed=73 query_result=1
+2026-10-11T20:11:25Z SUCCESS total=83 success=10 failed=73 query_result=1
+2026-10-11T20:11:27Z SUCCESS total=84 success=11 failed=73 query_result=1
+2026-10-11T20:11:29Z SUCCESS total=85 success=12 failed=73 query_result=1
+2026-10-11T20:11:31Z SUCCESS total=86 success=13 failed=73 query_result=1
+```
+
+Таким образом, сетевые политики работают корректно, не позволяя подключаться к `postgres` кому-либо кроме `api` и `worker`. 
