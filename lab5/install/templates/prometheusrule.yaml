@@ -2,62 +2,38 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ .Release.Name }}-alerts
+  name: {{ .Release.Name }}-network-alerts
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: shop
 spec:
   groups:
-    - name: lab3-shop-alerts
+    - name: lab5-network-alerts
       rules:
-        - alert: ShopApiDown
-          expr: |
-            (up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-api"} == 0)
-            or
-            absent(up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-api"})
-          for: 30s
+        - alert: ShopNetworkPolicyDenied
+          expr: sum(increase(hubble_drop_total{reason="POLICY_DENIED"}[5m])) > 0
           labels:
-            severity: critical
-            component: api
+            severity: warning
+            component: network-policy
           annotations:
-            summary: "Shop API is unavailable"
-            description: "Prometheus cannot scrape the shop API for at least 30 seconds."
+            summary: "NetworkPolicy denied traffic"
+            description: "Cilium detected traffic denied by Kubernetes NetworkPolicy."
 
-        - alert: ShopWorkerDown
-          expr: |
-            (up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-worker"} == 0)
-            or
-            absent(up{namespace="{{ .Release.Namespace }}", service="{{ .Release.Name }}-worker"})
-          for: 30s
+        - alert: ShopDroppedTcpFlows
+          expr: sum(increase(hubble_flows_processed_total{protocol="TCP",verdict="DROPPED"}[5m])) > 0
           labels:
-            severity: critical
-            component: worker
+            severity: warning
+            component: network
           annotations:
-            summary: "Shop worker is unavailable"
-            description: "Prometheus cannot scrape the shop worker for at least 30 seconds."
+            summary: "Dropped TCP flows detected"
+            description: "Hubble detected dropped TCP connections in the cluster."
 
-        - alert: ShopPostgresDown
-          expr: |
-            (
-              max(
-                kube_pod_container_status_ready{
-                  namespace="{{ .Release.Namespace }}",
-                  container="postgres"
-                }
-              ) < 1
-            )
-            or
-            absent(
-              kube_pod_container_status_ready{
-                namespace="{{ .Release.Namespace }}",
-                container="postgres"
-              }
-            )
-          for: 30s
+        - alert: ShopDnsFailures
+          expr: sum(increase(coredns_dns_responses_total{rcode=~"SERVFAIL|REFUSED"}[5m])) > 0
           labels:
             severity: critical
-            component: postgres
+            component: dns
           annotations:
-            summary: "Shop PostgreSQL is unavailable"
-            description: "The PostgreSQL container has not been ready for at least 30 seconds."
+            summary: "DNS failures detected"
+            description: "CoreDNS returned SERVFAIL or REFUSED responses."
 {{- end }}

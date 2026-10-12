@@ -90,3 +90,35 @@ prometheus:
   server:
     persistentVolume:
       enabled: false
+
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: lab5-network-alerts
+          rules:
+            - alert: ShopNetworkPolicyDenied
+              expr: sum(increase(hubble_drop_total{reason="POLICY_DENIED"}[5m])) > 0
+              labels:
+                severity: warning
+                component: network-policy
+              annotations:
+                summary: "NetworkPolicy denied traffic"
+                description: "Cilium detected traffic denied by Kubernetes NetworkPolicy."
+
+            - alert: ShopDroppedTcpFlows
+              expr: sum(increase(hubble_flows_processed_total{protocol="TCP",verdict="DROPPED"}[5m])) > 0
+              labels:
+                severity: warning
+                component: network
+              annotations:
+                summary: "Dropped TCP flows detected"
+                description: "Hubble detected dropped TCP connections in the cluster."
+
+            - alert: ShopDnsFailures
+              expr: sum(increase(coredns_dns_responses_total{rcode=~"SERVFAIL|REFUSED"}[5m])) > 0
+              labels:
+                severity: critical
+                component: dns
+              annotations:
+                summary: "DNS failures detected"
+                description: "CoreDNS returned SERVFAIL or REFUSED responses."

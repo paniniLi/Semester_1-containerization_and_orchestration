@@ -678,3 +678,154 @@ kubectl --context kind-lab5 logs \
 ```
 
 Таким образом, сетевые политики работают корректно, не позволяя подключаться к `postgres` кому-либо кроме `api` и `worker`. 
+
+## Часть 6 - Найди скрытую поломку связности
+
+Для проверки диагностики сетевых проблем был создан скрипт `break-network.sh`, который случайным образом выбирает одну из четырех заранее подготовленных ошибок в настройках NetworkPolicy.
+
+Подготовлены следующие варианты поломок:
+
+1. неверный порт PostgreSQL в egress-правиле `api`;
+2. неверная метка `shop-api` во входящем правиле PostgreSQL;
+3. неверный порт PostgreSQL в egress-правиле `worker`;
+4. неверная метка CoreDNS в правиле DNS-egress.
+
+Перед внесением ошибки было проверено исходное состояние системы. Создание заказа через `api` успешно выполнялось:
+
+```text
+HTTP/1.1 201
+```
+
+После этого была случайно внесена одна из подготовленных сетевых ошибок:
+
+```bash
+./lab5/break-network.sh
+```
+
+После применения измененной конфигурации DNS продолжал работать, а `worker` сохранял доступ к PostgreSQL. При этом создание нового заказа через `api` завершалось по таймауту.
+
+Таким образом, проблема была локализована на соединении `api -> PostgreSQL`.
+
+Для определения причины использовался Hubble. Наблюдение выполнялось за соединением от Pod-ов `shop-api` к `shop-postgres-1` на TCP-порту `5432`.
+
+В выводе Hubble были получены следующие события:
+
+```text
+EGRESS ALLOWED BY shop-api (NetworkPolicy)
+INGRESS DENIED
+Policy denied DROPPED
+```
+
+Из этого следует, что исходящий трафик со стороны `api` разрешен политикой `shop-api`, однако PostgreSQL отклоняет входящее соединение.
+
+![Диагностика заблокированного соединения через Hubble](images/part6-hubble-denied.png)
+
+Причиной оказался неверный label `shop-api` во входящем правиле NetworkPolicy для PostgreSQL. Из-за несовпадения метки трафик от `api` перестал соответствовать разрешающему ingress-правилу и блокировался политикой default-deny.
+
+Для восстановления исходной конфигурации был использован режим `restore`:
+
+```bash
+./lab5/break-network.sh restore
+```
+
+После восстановления NetworkPolicy были повторно проверены основные разрешенные маршруты матрицы доступа:
+
+- создание заказа через `api` снова возвращает `HTTP/1.1 201`;
+- обработка заказа через `worker` возвращает `HTTP/1.1 200`;
+- DNS-имя `shop-postgres-rw.lab5.svc.cluster.local` успешно разрешается.
+
+![Проверка связности после исправления](images/part6-after-fix.png)
+
+Таким образом, скрытая ошибка была обнаружена по фактическому сетевому трафику через Hubble. После исправления нарушенного правила матрица разрешенных соединений снова стала работоспособной.
+
+## Часть 7 - Мониторинг
+
+Для мониторинга используется observability-стек из Лабораторной работы №2. Новый стек не поднимался. В namespace `monitoring` были повторно развернуты существующие Prometheus и Grafana.
+
+Для наблюдения за сетевым трафиком в Cilium были включены Hubble Prometheus-метрики:
+
+```text
+dns
+drop
+tcp
+flow
+```
+
+Hubble экспортирует метрики через сервис `hubble-metrics` на порту `9965`. Prometheus успешно собирает эти данные.
+
+Для проверки были использованы следующие метрики:
+
+```text
+hubble_drop_total
+hubble_flows_processed_total
+coredns_dns_responses_total
+```
+
+Метрика `hubble_drop_total` позволяет определить трафик, заблокированный сетевой политикой. Например, при запрещенном TCP-соединении наблюдается:
+
+```text
+hubble_drop_total{protocol="TCP",reason="POLICY_DENIED"}
+```
+
+Метрика `hubble_flows_processed_total` используется для контроля сетевых потоков и содержит признак `verdict="DROPPED"` для отброшенных соединений.
+
+Для контроля DNS используется метрика CoreDNS `coredns_dns_responses_total`, содержащая код ответа `rcode`.
+
+В Helm-chart приложения присутствуют шаблоны `ServiceMonitor` и `PrometheusRule`. `ServiceMonitor` предназначен для обнаружения endpoint-ов приложения, а `PrometheusRule` содержит правила мониторинга Lab 5.
+
+Для лабораторной работы определены три сетевых алерта:
+
+### ShopNetworkPolicyDenied
+
+Срабатывает при появлении новых соединений, заблокированных Kubernetes NetworkPolicy:
+
+```promql
+sum(increase(hubble_drop_total{reason="POLICY_DENIED"}[5m])) > 0
+```
+
+Алерт позволяет обнаружить попытки соединения, не разрешенные zero-trust матрицей доступа.
+
+### ShopDroppedTcpFlows
+
+Срабатывает при появлении отброшенных TCP-потоков:
+
+```promql
+sum(increase(hubble_flows_processed_total{protocol="TCP",verdict="DROPPED"}[5m])) > 0
+```
+
+Алерт сигнализирует о деградации сетевой связности между компонентами.
+
+### ShopDnsFailures
+
+Срабатывает, если CoreDNS возвращает ошибки `SERVFAIL` или `REFUSED`:
+
+```promql
+sum(increase(coredns_dns_responses_total{rcode=~"SERVFAIL|REFUSED"}[5m])) > 0
+```
+
+Этот алерт контролирует работоспособность DNS, необходимого для обращения сервисов друг к другу по Kubernetes-именам.
+
+После загрузки правил Prometheus успешно обнаружил все три алерта:
+
+```text
+ShopDnsFailures
+ShopDroppedTcpFlows
+ShopNetworkPolicyDenied
+```
+
+![Правила мониторинга Lab 5](images/part7-alert-rules.png)
+
+Для проверки срабатывания был создан тестовый Pod, которому zero-trust политика запрещает подключение к PostgreSQL. Несколько попыток подключения создали события `POLICY_DENIED`.
+
+После обработки новых метрик Prometheus перевел алерт `ShopNetworkPolicyDenied` в состояние `firing`:
+
+```text
+alertname: ShopNetworkPolicyDenied
+alertstate: firing
+component: network-policy
+severity: warning
+```
+
+![Сработавший сетевой алерт](images/part7-alert-firing.png)
+
+Таким образом, мониторинг позволяет наблюдать сетевые соединения, обнаруживать трафик, отклоненный NetworkPolicy, и контролировать работу DNS. Срабатывание одного из трех алертов было подтверждено на практике.
