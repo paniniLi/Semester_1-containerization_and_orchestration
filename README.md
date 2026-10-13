@@ -9,6 +9,7 @@
 - [Отчет по лабораторной работе №3 - Собери платформу для shop](lab3/README.md)
 - [Отчет по лабораторной работе №4 - SLA критического пути под перегрузкой](lab4/README.md)
 - [Отчет по лабораторной работе №5 - Zero-trust сеть с доказательством](lab5/README.md)
+- [Отчет по лабораторной работе №6 - Автопилот релиза: катит хорошее, откатывает плохое](lab6/README.md)
 
 ## Материалы курса
 
@@ -17,3 +18,4 @@
 - [Задание к лабораторной работы №3](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-3-kubernetes-control-plane/lab.md)
 - [Задание к лабораторной работы №4](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-4-scheduling-resources/lab.md)
 - [Задание к лабораторной работы №5](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-5-kubernetes-networking/lab.md)
+- [Задание к лабораторной работы №6](https://github.com/KeladKaal/containerization-and-orchestration/blob/main-rus/lecture-6-service-mesh/lab.md)
