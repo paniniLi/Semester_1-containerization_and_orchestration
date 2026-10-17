@@ -1,0 +1,73 @@
+
+{{- if .Values.monitoring.prometheusOperator.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Release.Name }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+
+spec:
+  groups:
+    - name: lab6-mesh-alerts
+      rules:
+        - alert: Lab6HighErrorRate
+          expr: |
+            sum(rate(outbound_http_route_request_statuses_total{
+              parent_namespace="{{ .Release.Namespace }}",
+              parent_name="{{ .Release.Name }}-api",
+              http_status=~"5.."
+            }[2m]))
+            /
+            clamp_min(
+              sum(rate(outbound_http_route_request_statuses_total{
+                parent_namespace="{{ .Release.Namespace }}",
+                parent_name="{{ .Release.Name }}-api"
+              }[2m])),
+              0.001
+            ) > 0.05
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High HTTP 5xx error rate"
+            description: "More than 5% of API requests return HTTP 5xx."
+
+        - alert: Lab6HighP95Latency
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (
+                rate(outbound_http_route_request_duration_seconds_bucket{
+                  parent_namespace="{{ .Release.Namespace }}",
+                  parent_name="{{ .Release.Name }}-api"
+                }[5m])
+              )
+            ) > 1
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High API response latency"
+            description: "API p95 latency exceeds 1 second."
+
+        - alert: Lab6MeshTargetDown
+          expr: |
+            up{
+              job="lab6-linkerd-proxy",
+              namespace="{{ .Release.Namespace }}"
+            } == 0
+            or
+            absent(up{
+              job="lab6-linkerd-proxy",
+              namespace="{{ .Release.Namespace }}"
+            })
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Linkerd metrics unavailable"
+            description: "Prometheus cannot scrape the API Linkerd proxy."
+{{- end }}

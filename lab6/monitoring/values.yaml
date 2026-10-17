@@ -1,0 +1,129 @@
+grafana:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 384Mi
+
+prometheus:
+  enabled: true
+
+  alertmanager:
+    enabled: false
+
+  prometheus-node-exporter:
+    enabled: false
+
+  kube-state-metrics:
+    enabled: false
+
+  server:
+    persistentVolume:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    
+  extraScrapeConfigs: |
+    - job_name: lab6-linkerd-proxy
+      scrape_interval: 15s
+      metrics_path: /metrics
+      kubernetes_sd_configs:
+        - role: pod
+          namespaces:
+            names:
+              - lab6
+      relabel_configs:
+        - action: keep
+          source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          regex: shop-api
+
+        - action: keep
+          source_labels: [__meta_kubernetes_pod_container_port_name]
+          regex: linkerd-admin
+
+        - action: replace
+          source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+
+        - action: replace
+          source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+
+  
+  serverFiles:
+    alerting_rules.yml:
+      groups:
+        - name: lab6-mesh-alerts
+          rules:
+            - alert: Lab6HighErrorRate
+              expr: |
+                sum(rate(outbound_http_route_request_statuses_total{
+                  job="lab6-linkerd-proxy",
+                  parent_namespace="lab6",
+                  parent_name="shop-api",
+                  http_status=~"5.."
+                }[2m]))
+                /
+                clamp_min(
+                  sum(rate(outbound_http_route_request_statuses_total{
+                    job="lab6-linkerd-proxy",
+                    parent_namespace="lab6",
+                    parent_name="shop-api"
+                  }[2m])),
+                  0.001
+                ) > 0.05
+              for: 1m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High HTTP 5xx error rate"
+                description: "More than 5% of API requests return HTTP 5xx."
+
+            - alert: Lab6HighP95Latency
+              expr: |
+                histogram_quantile(
+                  0.95,
+                  sum by (le) (
+                    rate(outbound_http_route_request_duration_seconds_bucket{
+                      job="lab6-linkerd-proxy",
+                      parent_namespace="lab6",
+                      parent_name="shop-api"
+                    }[5m])
+                  )
+                ) > 1
+              for: 1m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High API response latency"
+                description: "API p95 latency exceeds 1 second."
+
+            - alert: Lab6MeshTargetDown
+              expr: |
+                up{job="lab6-linkerd-proxy",namespace="lab6"} == 0
+                or
+                absent(up{job="lab6-linkerd-proxy",namespace="lab6"})
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Linkerd metrics unavailable"
+                description: "Prometheus cannot scrape the API Linkerd proxy."
+ 
+
+loki:
+  enabled: false
+
+alloy:
+  enabled: false
+
+jaeger:
+  enabled: false
