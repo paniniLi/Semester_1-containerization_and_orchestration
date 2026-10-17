@@ -1,3 +1,5 @@
+{{- $root := . -}}
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -6,18 +8,16 @@ metadata:
     app.kubernetes.io/name: shop-api
     app.kubernetes.io/instance: {{ .Release.Name }}
   annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/path: "/metrics"
-    prometheus.io/port: "{{ .Values.api.service.port }}"
     {{- if .Values.api.retry.enabled }}
     retry.linkerd.io/http: "500"
-    retry.linkerd.io/limit: "{{ .Values.api.retry.limit }}"
+    retry.linkerd.io/limit: {{ .Values.api.retry.limit | quote }}
     {{- end }}
 spec:
   type: {{ .Values.api.service.type }}
   selector: # на какие Pod-ы применяется сетевая настройка сервиса
     app.kubernetes.io/name: shop-api
     app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Values.api.stableVersion | quote }}
   ports:
     - name: http
       port: {{ .Values.api.service.port }}
@@ -25,3 +25,32 @@ spec:
       {{- if eq .Values.api.service.type "NodePort" }}
       nodePort: {{ .Values.api.service.nodePort }}
       {{- end }}
+
+---
+{{- range $version, $config := .Values.api.versions }}
+
+# отдельный сервис для версий v1/v2
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $root.Release.Name }}-api-{{ $version }}
+  labels:
+    app.kubernetes.io/name: shop-api
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/version: {{ $version | quote }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: {{ $root.Values.api.service.port | quote }}
+spec:
+  type: ClusterIP
+  selector: # на какие Pod-ы применяется сетевая настройка сервиса
+    app.kubernetes.io/name: shop-api
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/version: {{ $version | quote }}
+  ports:
+    - name: http
+      port: {{ $root.Values.api.service.port }}
+      targetPort: http
+---
+{{- end }}

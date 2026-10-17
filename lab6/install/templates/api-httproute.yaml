@@ -1,0 +1,20 @@
+{{- if .Values.api.trafficSplit.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-api-split
+spec:
+  parentRefs: # список объектов, к которым применяется маршрут
+    - group: core # Service (ниже) является основным Kubernetes ресурсом
+      kind: Service # тип родительского (управляемого) ресурса
+      name: {{ .Release.Name }}-api # ресурс распределяет запросы к shop-api
+      port: {{ .Values.api.service.port }}
+  rules: # список правил маршрутизации запросов
+    - backendRefs:
+        - name: {{ .Release.Name }}-api-v1
+          port: {{ .Values.api.service.port }}
+          weight: {{ .Values.api.trafficSplit.v1Weight }}
+        - name: {{ .Release.Name }}-api-v2
+          port: {{ .Values.api.service.port }}
+          weight: {{ .Values.api.trafficSplit.v2Weight }}
+{{- end }}

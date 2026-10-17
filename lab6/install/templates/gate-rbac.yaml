@@ -1,0 +1,48 @@
+{{- if .Values.gate.enabled }}
+apiVersion: v1
+kind: ServiceAccount # обертка над подом для выдачи ролей
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels:
+    app.kubernetes.io/name: shop-gate
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role # набор разрешений объекту
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels:
+    app.kubernetes.io/name: shop-gate
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+rules:
+  - apiGroups: # группа ресурсов, к которому предоставляется доступ
+      - gateway.networking.k8s.io
+    resources: # тип Kubernetes ресурса, к которому предоставляется доступ
+      - httproutes
+    resourceNames: # имя релиза ресурса, к которому предоставляется доступ
+      - {{ .Release.Name }}-api-split
+    verbs: # разрешенные операции с доступными ресурсами: получение информации (get), изменение состояния (patch)
+      - get
+      - patch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding # связка объект <-> выдаваемая роль
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels:
+    app.kubernetes.io/name: shop-gate
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: shop
+subjects: # список субъектов, которым выдается роль
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-gate
+    namespace: {{ .Release.Namespace }}
+roleRef: # список ролей, выдаваемых субъекту
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-gate
+{{- end }}

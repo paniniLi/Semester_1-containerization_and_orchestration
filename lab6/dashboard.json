@@ -42,7 +42,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "1000 * histogram_quantile(\n  0.95,\n  sum by (le) (\n    rate(http_server_requests_seconds_bucket{\n      namespace=\"lab5\",\n      service=\"shop-api\",\n      uri=\"/order\",\n      method=\"POST\",\n      status=\"201\"\n    }[5m])\n  )\n)",
+                      "expr": "1000 * histogram_quantile(\n  0.95,\n  sum by (le) (\n    rate(http_server_requests_seconds_bucket{\n      namespace=\"lab6\",\n      service=\"shop-api-v2\",\n      uri=\"/order\",\n      method=\"POST\",\n      status=\"201\"\n    }[5m])\n  )\n)",
                       "legendFormat": "p95",
                       "range": true
                     },
@@ -56,10 +56,10 @@
             "transformations": []
           }
         },
-        "description": "Baseline без service mesh: 95-й перцент задержки успешных POST /order за скользящее окно 5 минут.",
+        "description": "95-й перцент задержки успешных POST /order к v2 с включённым Linkerd за скользящее окно 5 минут.",
         "id": 1,
         "links": [],
-        "title": "API · POST /order p95 latency (baseline)",
+        "title": "API · POST /order p95 latency (mesh)",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -168,7 +168,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum by (pod) (\n  rate(container_cpu_usage_seconds_total{\n    namespace=\"lab5\",\n    container=~\"api|linkerd-proxy\",\n    image!=\"\"\n  }[2m])\n)",
+                      "expr": "sum by (pod) (\n  rate(container_cpu_usage_seconds_total{\n    namespace=\"lab6\",\n    pod=~\"shop-api-v2-.*\",\n    container=~\"api|linkerd-proxy\",\n    image!=\"\"\n  }[2m])\n)",
                       "legendFormat": "{{pod}}",
                       "range": true
                     },
@@ -182,10 +182,10 @@
             "transformations": []
           }
         },
-        "description": "Среднее потребление CPU каждым API Pod за 2 минуты. Baseline без mesh включает только api; после включения Linkerd та же формула включит api + linkerd-proxy. 1 core = одно полностью занятое ядро CPU.",
+        "description": "Суммарное среднее потребление CPU контейнерами api и linkerd-proxy в каждом Pod v2 за 2 минуты. 1 core = одно полностью занятое ядро CPU.",
         "id": 2,
         "links": [],
-        "title": "API · CPU usage (baseline)",
+        "title": "API · CPU usage per Pod (mesh)",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -290,7 +290,7 @@
                     "kind": "DataQuery",
                     "spec": {
                       "editorMode": "code",
-                      "expr": "sum by (pod) (\n  container_memory_working_set_bytes{\n    namespace=\"lab5\",\n    container=~\"api|linkerd-proxy\"\n  }\n  and on(namespace, pod, container, id)\n  topk by(namespace, pod, container) (\n    1,\n    container_start_time_seconds{\n      namespace=\"lab5\",\n      container=~\"api|linkerd-proxy\"\n    }\n  )\n)",
+                      "expr": "sum by (pod) (\n  container_memory_working_set_bytes{\n    namespace=\"lab6\",\n    pod=~\"shop-api-v2-.*\",\n    container=~\"api|linkerd-proxy\",\n    image!=\"\"\n  }\n)",
                       "legendFormat": "{{pod}}",
                       "range": true
                     },
@@ -304,10 +304,10 @@
             "transformations": []
           }
         },
-        "description": "Working set памяти каждого API Pod. Baseline без mesh включает только api; после включения Linkerd та же формула включит api + linkerd-proxy. Фильтр по container_start_time_seconds исключает дубли старых экземпляров контейнера.",
+        "description": "Суммарный working set памяти контейнеров api и linkerd-proxy в каждом Pod v2.",
         "id": 3,
         "links": [],
-        "title": "API · Memory working set (baseline)",
+        "title": "API · Memory working set per Pod (mesh)",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -475,6 +475,6 @@
     "timezone": "browser",
     "to": "now"
   },
-  "title": "Lab 6 · API baseline (no mesh)",
+  "title": "Lab 6 · API with Linkerd mesh",
   "variables": []
 }

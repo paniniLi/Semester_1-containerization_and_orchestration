@@ -14,7 +14,7 @@ WORKDIR /app
 
 RUN useradd --system --uid 10001 appuser
 
-COPY --from=build /app/target/lab3-api-1.0.0.jar app.jar
+COPY --from=build /app/target/lab6-api-1.0.0.jar app.jar
 
 USER 10001
 

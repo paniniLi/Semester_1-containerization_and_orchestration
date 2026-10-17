@@ -3,12 +3,25 @@
 ##########################################
 api:
   image:
-    repository: lab3-api
-    version: "1.0"
+    repository: shop-api
+    version: "lab6"
     pullPolicy: IfNotPresent
-  instances: 2
+  versions:
+    v1:
+      instances: 0
+      fail: false
+      flaky: false
+    v2:
+      instances: 1
+      fail: false
+      flaky: false
+  stableVersion: v2
   mesh:
     enabled: true
+  trafficSplit:
+    enabled: false
+    v1Weight: 90
+    v2Weight: 10
   resources:
     requests:
       cpu: 50m
@@ -28,11 +41,32 @@ api:
     port: 8080
     type: NodePort
     nodePort: 30082
-  health_fail: false
-  flaky: false
   retry:
     enabled: false
     limit: 2
+
+##########################################
+## Параметры script-gate
+##########################################
+gate:
+  enabled: false
+  image:
+    repository: shop-gate
+    version: "lab6"
+    pullPolicy: IfNotPresent
+  prometheusUrl: http://monitoring-prometheus-server.monitoring.svc.cluster.local # URL для получения метрик Prometheus внутри gate
+  intervalSeconds: 15 # интервал проверки работоспособности v1/v2 версий api
+  minRequests: 20 # минимальное количество запросов для принятия решения об изменении весов v1/v2
+  errorThreshold: 0.05 # допустимый порог ошибок v2 до отката
+  averageLatencyThresholdSeconds: 0.5 # допустимая средняя задержка v2 до отката
+  promotionStep: 10 # шаг увеличения доли трафика, направленного на v2 при успешной проверке
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
 
 ##########################################
 ## Параметры приложения Worker

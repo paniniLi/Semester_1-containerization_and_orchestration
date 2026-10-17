@@ -1,15 +1,18 @@
+{{- $root := . -}}
 
+{{- range $version, $config := .Values.api.versions }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-api
+  name: {{ $root.Release.Name }}-api-{{ $version }}
   labels:
     app.kubernetes.io/name: shop-api
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
     app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+    app.kubernetes.io/version: {{ $version | quote }}
 
 spec:
-  replicas: {{ .Values.api.instances }}
+  replicas: {{ $config.instances }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -17,26 +20,28 @@ spec:
       maxSurge: 1
 
   selector:
-    matchLabels: # какие Pod-ы будут учитываться при подсчете количества реплик
+    matchLabels:
       app.kubernetes.io/name: shop-api
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
       app.kubernetes.io/part-of: shop
+      app.kubernetes.io/version: {{ $version | quote }}
 
   template:
     metadata: # метки создаваемых Pod-ов
-      {{- if .Values.api.mesh.enabled }}
+      {{- if $root.Values.api.mesh.enabled }}
       annotations:
         linkerd.io/inject: "enabled"
       {{- end }}
       labels:
         app.kubernetes.io/name: shop-api
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
         app.kubernetes.io/part-of: shop # ресурс относится ко всей системе shop
+        app.kubernetes.io/version: {{ $version | quote }}
     spec:
       initContainers: # проверяем, применены ли изменения к схеме данных; до окончания их применения не запускаем приложение
         - name: wait-for-schema-migrations
-          image: "{{ .Values.migrations.image.repository }}:{{ .Values.migrations.image.version }}"
-          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          image: "{{ $root.Values.migrations.image.repository }}:{{ $root.Values.migrations.image.version }}"
+          imagePullPolicy: {{ $root.Values.migrations.image.pullPolicy }}
           args:
             - "-connectRetries=60"
             - "validate"
@@ -44,60 +49,63 @@ spec:
             - name: FLYWAY_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgres-app
+                  name: {{ $root.Release.Name }}-postgres-app
                   key: jdbc-uri
 
             - name: FLYWAY_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgres-app
+                  name: {{ $root.Release.Name }}-postgres-app
                   key: username
 
             - name: FLYWAY_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgres-app
+                  name: {{ $root.Release.Name }}-postgres-app
                   key: password
 
           resources:
-            {{- toYaml .Values.api.wait_for_schema_migrations.resources | nindent 12 }}
+            {{- toYaml $root.Values.api.wait_for_schema_migrations.resources | nindent 12 }}
 
       containers:
         - name: api
-          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.version }}"
-          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          image: "{{ $root.Values.api.image.repository }}:{{ $root.Values.api.image.version }}"
+          imagePullPolicy: {{ $root.Values.api.image.pullPolicy }}
           resources:
-            {{- toYaml .Values.api.resources | nindent 12 }}
+            {{- toYaml $root.Values.api.resources | nindent 12 }}
 
           ## Параметры подключения приложения к базе данных
           env:
             - name: DB_URL # JDBC-адрес PostgreSQL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgres-app
+                  name: {{ $root.Release.Name }}-postgres-app
                   key: jdbc-uri
 
             - name: DB_USER # пользователь базы
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgres-app
+                  name: {{ $root.Release.Name }}-postgres-app
                   key: username
 
             - name: DB_PASSWORD # пароль пользователя базы
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgres-app
+                  name: {{ $root.Release.Name }}-postgres-app
                   key: password
 
-            - name: HEALTH_FAIL
-              value: "{{ .Values.api.health_fail }}"
+            - name: API_VERSION
+              value: {{ $version | quote }}
+
+            - name: FAIL
+              value: {{ $config.fail | quote }}
 
             - name: FLAKY
-              value: "{{ .Values.api.flaky }}"
+              value: {{ $config.flaky | quote }}
 
           ports:
             - name: http
-              containerPort: {{ .Values.api.service.port }}
+              containerPort: {{ $root.Values.api.service.port }}
           readinessProbe: # параметры для readiness-пробы
             httpGet:
               path: /health
@@ -110,3 +118,5 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
+---
+{{- end }}
