@@ -6,7 +6,9 @@ api:
     repository: lab3-api
     version: "1.0"
     pullPolicy: IfNotPresent
-  instances: 4
+  instances: 2
+  mesh:
+    enabled: true
   resources:
     requests:
       cpu: 50m
@@ -27,6 +29,10 @@ api:
     type: NodePort
     nodePort: 30082
   health_fail: false
+  flaky: false
+  retry:
+    enabled: false
+    limit: 2
 
 ##########################################
 ## Параметры приложения Worker
@@ -36,7 +42,7 @@ worker:
     repository: lab3-worker
     version: "1.0"
     pullPolicy: IfNotPresent
-  instances: 2
+  instances: 0
   resources:
     requests:
       cpu: 50m

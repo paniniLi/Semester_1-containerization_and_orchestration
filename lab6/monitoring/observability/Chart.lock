@@ -1,0 +1,18 @@
+dependencies:
+- name: grafana
+  repository: https://grafana-community.github.io/helm-charts
+  version: 12.8.0
+- name: loki
+  repository: https://grafana-community.github.io/helm-charts
+  version: 18.13.4
+- name: alloy
+  repository: https://grafana.github.io/helm-charts
+  version: 1.12.1
+- name: jaeger
+  repository: https://jaegertracing.github.io/helm-charts
+  version: 4.14.0
+- name: prometheus
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 29.33.1
+digest: sha256:3492e0ca97347b770b370056d0343d606f27607dba2c528a4b733d113707adb7
+generated: "2026-09-25T19:10:01.857730402+03:00"

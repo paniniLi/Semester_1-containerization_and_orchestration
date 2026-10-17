@@ -9,6 +9,10 @@ metadata:
     prometheus.io/scrape: "true"
     prometheus.io/path: "/metrics"
     prometheus.io/port: "{{ .Values.api.service.port }}"
+    {{- if .Values.api.retry.enabled }}
+    retry.linkerd.io/http: "500"
+    retry.linkerd.io/limit: "{{ .Values.api.retry.limit }}"
+    {{- end }}
 spec:
   type: {{ .Values.api.service.type }}
   selector: # на какие Pod-ы применяется сетевая настройка сервиса
