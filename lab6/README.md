@@ -301,7 +301,7 @@ HTTP/1.1 500
 
 Для небольшого кластера и ограниченных ресурсов виртуальной машины выбран Linkerd как более простой вариант с необходимой функциональностью.
 
-Для реализации лабораторной работы планируется использовать:
+Для реализации лабораторной работы использованы следующие технологии:
 
 - `Linkerd` - service mesh;
 - `mTLS` - шифрование и аутентификация соединений;
@@ -309,11 +309,11 @@ HTTP/1.1 500
 - `retries` - повторные запросы при временных ошибках;
 - `Prometheus` и `Grafana` из Лабы 2 - сбор и отображение метрик.
 
-Начальное распределение трафика будет составлять 90% для `v1` и 10% для `v2`. В дальнейшем веса будут автоматически изменяться скриптом-рейт на основании показателей ошибок и задержек.
+Начальное распределение трафика будет составлять 90% для `v1` и 10% для `v2`. Изменение весов трафика реализовано с помощью скрипта gate, который принимает решение на основании метрик ошибок и задержек.
 
 Поскольку Linkerd 2.20 официально поддерживает Kubernetes до версии 1.35, для работы планируется использовать отдельный однодовый kind-кластер с совместимой версией Kubernetes.
 
-В Части 3 выполнены установка Linkerd, подключение API к mesh через Helm-chart и проверка mTLS. Для включения proxy-injection будут использоваться аннотации Pod-ов, задаваемые через `values.yaml`.
+В Части 3 выполнены установка Linkerd, подключение API к mesh через Helm-chart и проверка mTLS. Подключение API к Linkerd выполнено через аннотацию linkerd.io/inject: "enabled", которая задаётся в Helm-chart и управляется параметром api.mesh.enabled в values.yaml.
 
 ## Часть 2 - Замерь baseline
 Настроим дашборд для нагрузочного тестирования со следующими метриками:
@@ -410,7 +410,7 @@ api:
 В [api-deployment.yaml](install/templates/api-deployment.yaml) добавлена аннотация для автоматического подключения Linkerd proxy:
 
 ```yaml
-{{- if .Values.api.mesh.enabled }}
+{{- if $root.Values.api.mesh.enabled }}
 annotations:
   linkerd.io/inject: "enabled"
 {{- end }}
@@ -598,7 +598,18 @@ linkerd --context kind-lab6 diagnostics proxy-metrics \
 
 ```yaml
 api:
-  flaky: false
+  versions:
+    v1:
+      instances: 2
+      fail: false
+      flaky: true
+    v2:
+      instances: 0
+      fail: false
+      flaky: false
+
+  stableVersion: v1
+
   retry:
     enabled: false
     limit: 2
@@ -619,7 +630,13 @@ api:
 helm upgrade --install shop lab6/install \
   --namespace lab6 \
   --kube-context kind-lab6 \
-  --set api.flaky=true \
+  --set api.versions.v1.instances=2 \
+  --set api.versions.v2.instances=0 \
+  --set api.stableVersion=v1 \
+  --set api.trafficSplit.enabled=false \
+  --set api.versions.v1.flaky=true \
+  --set api.retry.enabled=false \
+  --set gate.enabled=false \
   --wait \
   --wait-for-jobs \
   --timeout 10m
@@ -631,7 +648,7 @@ helm upgrade --install shop lab6/install \
 
 ```bash
 kubectl --context kind-lab6 -n lab6 \
-  get deployment shop-api -o yaml | grep -A 1 'name: FLAKY'
+  get deployment shop-api-v1 -o yaml | grep -A 1 'name: FLAKY'
 ```
 
 Результат:
@@ -649,7 +666,7 @@ kubectl --context kind-lab6 -n lab6 \
 
 ```bash
 kubectl --context kind-lab6 exec -n lab6 \
-  deployment/shop-api -c api -- bash -c '
+  deployment/shop-api-v1 -c api -- bash -c '
 ok=0
 err=0
 other=0
@@ -715,8 +732,13 @@ retry.linkerd.io/limit: "{{ .Values.api.retry.limit }}"
 helm upgrade --install shop lab6/install \
   --namespace lab6 \
   --kube-context kind-lab6 \
-  --set api.flaky=true \
+  --set api.versions.v1.instances=2 \
+  --set api.versions.v2.instances=0 \
+  --set api.stableVersion=v1 \
+  --set api.trafficSplit.enabled=false \
+  --set api.versions.v1.flaky=true \
   --set api.retry.enabled=true \
+  --set gate.enabled=false \
   --wait \
   --wait-for-jobs \
   --timeout 10m
@@ -1119,7 +1141,7 @@ pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration
 2026-10-17 15:16:27,609 INFO release-gate action=HOLD reason=insufficient v2 traffic (0.0 < 20.0) requests=0.0 error_rate=none average_latency_seconds=0.0000 weights=90/10
 2026-10-17 15:16:42,622 INFO release-gate action=HOLD reason=insufficient v2 traffic (0.0 < 20.0) requests=0.0 error_rate=none average_latency_seconds=0.0000 weights=90/10
 ```
-Окружение подготовлено, можно приступать к тесту. В отдельном терминале будет отправлять запросы на `shop-api` из mesh пода и посмотрим на результат работы `shop-gate`:
+Окружение подготовлено, можно приступать к тесту. В отдельном терминале будем отправлять запросы на `shop-api` из mesh пода и посмотрим на результат работы `shop-gate`:
 ```bash
 pona@pona-RedmiBook-14:~/Documents/Semester_1-containerization_and_orchestration$ V1_POD=$(
   kubectl --context kind-lab6 get pod \
@@ -1742,3 +1764,204 @@ Status code distribution:
 | среднее количество CPU, потребляемого подом   | 0.0174 cores   | 0.0598 cores   | 0.0424 cores       | 243.68                   |
 
 Таким образом, при использовании mesh наблюдается рост latency и объема потребляемых ресурсов. Несмотря на это абсолютное значение прироста незначительно для наблюдаемой системы, поэтому использование mesh оправдано, поскольку он предоставляет широкие возможности по настройке трафика между подами взамен на незначительный прирост потребляемых ресурсов.
+
+## Часть 9 - Мониторинг
+
+Для мониторинга приложения использованы Prometheus и Grafana на основе стека из Лабы 2. Основная задача - собирать метрики Linkerd, отслеживать состояние версий API `v1` и `v2`, отображать распределение трафика и обнаруживать проблемы с помощью алертов.
+
+### Настройка Prometheus и Grafana
+
+Для Лабы 6 подготовлен отдельный Helm-chart [observability](monitoring/observability), созданный на основе конфигурации Лабы 2.
+
+В файле [monitoring/values.yaml](monitoring/values.yaml) настроены:
+- Prometheus для сбора и хранения метрик;
+- Grafana для визуализации;
+- дополнительный scrape job `lab6-linkerd-proxy` для сбора метрик Linkerd;
+- три правила оповещения о проблемах приложения и мониторинга.
+
+Метрики Linkerd собираются с административного порта `4191` API Pod-ов каждые 15 секунд. Java-приложение дополнительно предоставляет метрики через `/metrics` на порту `8080`.
+
+Установим мониторинг:
+
+```bash
+helm upgrade --install lab6-monitoring \
+  lab6/monitoring/observability \
+  --namespace monitoring \
+  --create-namespace \
+  --kube-context kind-lab6 \
+  -f lab6/monitoring/values.yaml \
+  --wait \
+  --timeout 10m
+```
+
+Проверим состояние Pod-ов:
+
+```bash
+kubectl --context kind-lab6 get pods -n monitoring
+```
+
+Grafana и Prometheus запущены и имеют статус `2/2 Running`.
+
+Для доступа к Grafana используется port-forward:
+
+```bash
+kubectl --context kind-lab6 -n monitoring \
+  port-forward svc/lab6-monitoring-grafana 3000:80
+```
+
+Интерфейс Grafana доступен по адресу `http://localhost:3000`.
+
+### Подготовка ServiceMonitor и PrometheusRule
+
+В основной Helm-chart [install](install) добавлены шаблоны:
+
+- [servicemonitor.yaml](install/templates/servicemonitor.yaml) - описание сбора метрик Java API;
+- [prometheusrule.yaml](install/templates/prometheusrule.yaml) - три правила мониторинга.
+
+`ServiceMonitor` выбирает сервисы `shop-api-v1` и `shop-api-v2` по меткам `app.kubernetes.io/name`, `app.kubernetes.io/instance` и наличию `app.kubernetes.io/version`.
+
+Метрики собираются по пути `/metrics` с интервалом 15 секунд.
+
+Ресурсы включаются параметром `monitoring.prometheusOperator.enabled`, что позволяет использовать основной chart как с Prometheus Operator, так и без него.
+
+Проверим генерацию обоих шаблонов:
+
+```bash
+helm template shop lab6/install \
+  -n lab6 \
+  --set monitoring.prometheusOperator.enabled=true \
+  --show-only templates/servicemonitor.yaml \
+  --show-only templates/prometheusrule.yaml
+```
+
+Оба ресурса успешно сформированы. Дополнительно команда `helm lint lab6/install` завершилась с результатом `0 chart(s) failed`.
+
+В используемом кластере установлен обычный Prometheus из Лабы 2, без Prometheus Operator и соответствующих CRD. Поэтому операторные шаблоны подготовлены и проверены через Helm, но не устанавливаются в кластер. Cбор метрик Linkerd реализован через `extraScrapeConfigs`, а правила алертов загружены через конфигурацию Prometheus `alerting_rules.yml`.
+
+### Дашборд Grafana
+
+В файле [dashboard.json](monitoring/observability/dashboards/dashboard.json) подготовлен дашборд `Lab 6 - Service Mesh Monitoring`.
+
+Он содержит восемь графиков:
+
+| График | Назначение |
+|---|---|
+| HTTP Request Rate | Общая скорость HTTP-запросов |
+| Retry Rate | Количество повторных попыток Linkerd в секунду |
+| HTTP 5xx Error Rate | Доля ошибок HTTP 5xx, полученных клиентами |
+| p95 Response Latency | Общая задержка запросов на уровне 95-го процентиля |
+| HTTP Request Rate by Version | Скорость запросов отдельно к v1 и v2 |
+| HTTP 5xx Error Rate by Version | Доля ошибок отдельно для каждой версии |
+| p95 Response Latency by Version | Задержка p95 отдельно для каждой версии |
+| Traffic Distribution | Фактическое процентное распределение трафика между v1 и v2 |
+
+Для разделения метрик по версиям используются метки Linkerd `backend_name="shop-api-v1"` и `backend_name="shop-api-v2"`.
+
+В отличие от заданных весов HTTPRoute, график `Traffic Distribution` рассчитывается по фактически обработанным запросам каждой версии.
+
+<details>
+<summary>Общие метрики приложения</summary>
+
+![Общие метрики Linkerd](images/part9-dashboard-overview.png)
+
+</details>
+
+### Проверка распределения трафика по версиям
+
+Для проверки мониторинга были запущены обе версии API с настройками:
+
+- `v1` - одна реплика;
+- `v2` - одна реплика;
+- распределение трафика - 90% на v1 и 10% на v2;
+- автоматический gate и retries временно отключены.
+
+Для проверки маршрутизации отправлено 100 запросов `GET /version` через сервис `shop-api` из Pod-а, подключённого к Linkerd.
+
+Получены результаты:
+
+| Версия | Количество запросов | Доля |
+|---|---:|---:|
+| v1 | 92 | 92% |
+| v2 | 8 | 8% |
+| Всего | 100 | 100% |
+
+Результат соответствует настроенным весам 90/10 с учётом вероятностного характера распределения.
+
+Затем выполнена дополнительная нагрузка из 250 запросов `GET /version` с интервалом 0,2 секунды.
+
+На графике `Traffic Distribution` фактическое распределение во время нагрузки составляло приблизительно 88% для v1 и 12% для v2.
+
+Prometheus также подтвердил наличие метрик задержки для обеих версий. В одном из измерений p95 составлял около 23,75 мс для каждой версии, поэтому линии задержки на графике практически совпадают.
+
+При отключённых искусственных ошибках доля HTTP 5xx для обеих версий составляла 0%.
+
+<details>
+<summary>Метрики и распределение трафика v1/v2</summary>
+
+![Мониторинг версий API](images/part9-dashboard-versions.png)
+
+</details>
+
+### Проверка мониторинга повторных запросов
+
+Дополнительно использован эксперимент из части 4 с включёнными `FLAKY=true` и retries.
+
+Во время нагрузки Grafana отображала рост количества повторных запросов, доли ошибок и задержки p95.
+
+Таким образом, дашборд позволяет не только отслеживать нормальную работу приложения, но и наблюдать влияние механизма retries на HTTP-трафик.
+
+<details>
+<summary>Мониторинг retries при искусственных ошибках</summary>
+
+![Метрики retries](images/part9-dashboard-flaky-retries.png)
+
+</details>
+
+### Настройка алертов
+
+В Prometheus настроены три алерта.
+
+| Алерт | Условие | Обоснование |
+|---|---|---|
+| `Lab6HighErrorRate` | Доля HTTP 5xx превышает 5% в течение 1 минуты | Позволяет обнаруживать неудачные релизы и рост ошибок API |
+| `Lab6HighP95Latency` | Задержка p95 превышает 1 секунду в течение 1 минуты | Позволяет выявлять ухудшение скорости ответа даже при успешных HTTP-запросах |
+| `Lab6MeshTargetDown` | Метрики Linkerd недоступны более 1 минуты | Позволяет обнаружить потерю наблюдаемости за приложением или недоступность proxy |
+
+Первый алерт рассчитывает долю HTTP 5xx за двухминутное окно. Второй использует гистограмму задержек Linkerd за пять минут. Третий проверяет доступность целей сбора метрик через показатель `up`.
+
+Для проверки правил получим их состояние из Prometheus API:
+
+```bash
+curl -sG 'http://127.0.0.1:9090/api/v1/rules' \
+  --data-urlencode 'type=alert'
+```
+
+Все три алерта загружены с `health: ok`. При нормальной работе приложения их состояние - `inactive`.
+
+### Проверка срабатывания алерта
+
+Для проверки `Lab6HighErrorRate` использовалась версия API с `FLAKY=true` и отключёнными retries.
+
+Было отправлено 110 запросов `POST /order`.
+
+Получены результаты:
+
+| Показатель | Значение |
+|---|---:|
+| Всего запросов | 110 |
+| Успешных HTTP 201 | 78 |
+| Ошибок HTTP 500 | 32 |
+| Доля ошибок | 29,1% |
+
+Поскольку доля ошибок превысила установленный порог 5% и условие сохранялось достаточно долго, Prometheus перевёл алерт `Lab6HighErrorRate` в состояние `firing`.
+
+<details>
+<summary>Срабатывание алерта при высокой доле ошибок</summary>
+
+![Алерт Lab6HighErrorRate](images/part9-alert-high-error-rate.png)
+
+</details>
+
+После эксперимента конфигурация retries была восстановлена. Остальные два алерта проверены на корректную загрузку и состояние `health: ok`, без искусственного вызова их срабатывания.
+
+Таким образом, настроенный мониторинг позволяет отслеживать интенсивность HTTP-трафика, ошибки и задержки отдельно по версиям приложения, фактическое распределение запросов между v1/v2 и работу механизма retries. Три алерта обеспечивают обнаружение высокой доли ошибок, увеличения задержки и недоступности метрик Linkerd.
